@@ -1,0 +1,31 @@
+# Configuração simples para localhost XAMPP e produção
+
+# Desabilitar listagem de diretórios
+<IfModule mod_autoindex.c>
+  Options -Indexes
+</IfModule>
+
+# Bloquear acesso a arquivos sensíveis
+<FilesMatch "^\.(git|env|htaccess)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+</FilesMatch>
+
+# Bloquear acesso aos arquivos de configuração
+<FilesMatch "^config\.php$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+</FilesMatch>
+
+# Cache Control Headers (apenas se mod_headers está disponível)
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+</IfModule>
+
+# Compressão (se mod_deflate está disponível)
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css application/javascript application/json
+</IfModule>

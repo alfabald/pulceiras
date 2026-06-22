@@ -1,0 +1,24 @@
+# Dados locais
+/data/participants.json
+/data/backups/
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# Logs
+a*.log
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Dependencias/artefatos
+node_modules/
+vendor/

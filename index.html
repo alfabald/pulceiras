@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Passe Solidário Gabú Hamburg</title>
+    <link rel="stylesheet" href="assets/css/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"> GH</div>
+          <div>
+            <h1>Passe Solidário Gabú Hamburg</h1>
+            <p>Piquenique dos filhos e amigos de Gabú</p>
+          </div>
+        </div>
+
+        <nav class="tabs" aria-label="Áreas do passe solidário">
+          <button class="tab is-active" type="button" data-view="register">Inscrição</button>
+          <button class="tab" type="button" data-view="pass">Passe</button>
+          <button class="tab" type="button" data-view="transparency">Transparência</button>
+          <button class="tab" type="button" data-view="checkin" data-admin-only hidden>Entrada</button>
+          <button class="tab" type="button" data-view="participants" data-admin-only hidden>Participantes</button>
+        </nav>
+
+        <div class="admin-controls">
+          <span class="admin-status" id="adminStatusLabel">Público</span>
+          <button class="secondary-action" type="button" id="adminLoginButton">Organizador</button>
+          <button class="secondary-action" type="button" id="adminLogoutButton" hidden>Sair</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="summary-strip" aria-label="Resumo do evento">
+          <div>
+            <span>Objetivo</span>
+            <strong>Apoiar a população de Gabú</strong>
+          </div>
+          <div>
+            <span>Local</span>
+            <strong>Hamburg</strong>
+          </div>
+          <div>
+            <span>Formato</span>
+            <strong>Passe digital sem pulseiras</strong>
+          </div>
+        </section>
+
+        <section class="view is-active" id="register" aria-labelledby="registerTitle">
+          <div class="work-grid">
+            <form class="panel form-panel" id="signupForm">
+              <div class="section-title">
+                <p>Nova inscrição</p>
+                <h2 id="registerTitle">Criar passe solidário</h2>
+              </div>
+
+              <div class="field-grid">
+                <label>
+                  <span>Nome completo</span>
+                  <input name="fullName" type="text" autocomplete="name" required placeholder="Ex.: Alfa Balde">
+                </label>
+
+                <label>
+                  <span>WhatsApp ou telefone</span>
+                  <input name="phone" type="tel" autocomplete="tel" required placeholder="+49 ...">
+                </label>
+
+                <label>
+                  <span>Email</span>
+                  <input name="email" type="email" autocomplete="email" placeholder="opcional">
+                </label>
+
+                <label>
+                  <span>Cidade ou bairro</span>
+                  <input name="city" type="text" autocomplete="address-level2" placeholder="Ex.: Hamburg">
+                </label>
+
+                <label>
+                  <span>Número de pessoas</span>
+                  <input name="guests" type="number" min="1" max="50" value="1" required>
+                </label>
+
+                <label>
+                  <span>Contribuição</span>
+                  <input name="contribution" type="number" min="0" step="0.01" value="10" required>
+                </label>
+
+                <label>
+                  <span>Estado da contribuição</span>
+                  <select name="paymentStatus">
+                    <option value="Prometido">Prometido</option>
+                    <option value="Recebido em dinheiro">Recebido em dinheiro</option>
+                    <option value="Transferência confirmada">Transferência confirmada</option>
+                  </select>
+                </label>
+
+                <label class="span-2">
+                  <span>Mensagem ou observação</span>
+                  <textarea name="note" rows="4" placeholder="Ex.: Vou levar bebida, arroz, sumo..."></textarea>
+                </label>
+              </div>
+
+              <button class="primary-action" type="submit">Gerar passe digital</button>
+              <p class="form-status" id="formStatus" role="status" aria-live="polite"></p>
+            </form>
+
+            <aside class="panel event-panel" aria-label="Resumo solidário">
+              <div class="section-title">
+                <p>Resumo local</p>
+                <h2>Movimento do evento</h2>
+              </div>
+
+              <dl class="metric-list">
+                <div>
+                  <dt>Inscrições</dt>
+                  <dd id="metricRegistrations">0</dd>
+                </div>
+                <div>
+                  <dt>Pessoas previstas</dt>
+                  <dd id="metricGuests">0</dd>
+                </div>
+                <div>
+                  <dt>Entradas confirmadas</dt>
+                  <dd id="metricCheckedIn">0</dd>
+                </div>
+                <div>
+                  <dt>Valor previsto</dt>
+                  <dd id="metricPledged">0,00 EUR</dd>
+                </div>
+                <div>
+                  <dt>Valor recebido</dt>
+                  <dd id="metricReceived">0,00 EUR</dd>
+                </div>
+              </dl>
+
+              <div class="purpose-box">
+                <strong>Destino do fundo</strong>
+                <p>Ajuda direta para necessidades da população de Gabú, com registo transparente das contribuições.</p>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="pass" aria-labelledby="passTitle">
+          <div class="pass-layout">
+            <div class="empty-state" id="emptyPass">
+              <p>O último passe criado aparece aqui.</p>
+            </div>
+
+            <article class="pass-card" id="passCard" hidden>
+              <div class="pass-head">
+                <div>
+                  <p>Passe Solidário</p>
+                  <h2 id="passTitle">Gabú Hamburg</h2>
+                </div>
+                <span id="passStatus">Válido</span>
+              </div>
+
+              <div class="pass-body"> 
+                <div id="passSeal" class="pass-qrcode" aria-label="QR code do passe"></div> 
+
+                <div class="pass-details">
+                  <span>Participante</span>
+                  <strong id="passName">-</strong>
+
+                  <span>Código de entrada</span>
+                  <strong class="code-text" id="passCode">-</strong>
+
+                  <span>Contribuição</span>
+                  <strong id="passContribution">-</strong>
+                </div>
+              </div>
+
+              <div class="pass-foot">
+                <p id="passMeta">Piquenique solidário em Hamburg</p>
+                <div class="button-row">
+                  <button type="button" class="secondary-action" id="copyPass">Copiar</button>
+                  <button type="button" class="secondary-action" id="sharePass">WhatsApp</button>
+                  <button type="button" class="secondary-action" id="printPass">Imprimir</button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="transparency" aria-labelledby="transparencyTitle">
+          <div class="panel transparency-panel">
+            <header>
+              <h2 id="transparencyTitle">Transparência</h2>
+              <p>Dados públicos sobre o arrecadamento do Passe Solidário Gabú Hamburg</p>
+            </header>
+
+            <article class="transparency-content">
+              <div class="metrics-grid">
+                <div class="metric-card">
+                  <div class="metric-value" id="transparencyRegistrations">-</div>
+                  <div class="metric-label">Inscrições</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value" id="transparencyGuests">-</div>
+                  <div class="metric-label">Pessoas confirmadas</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-value" id="transparencyPledged">-</div>
+                  <div class="metric-label">Prometido</div>
+                </div>
+                <div class="metric-card success">
+                  <div class="metric-value" id="transparencyReceived">-</div>
+                  <div class="metric-label">Recebido</div>
+                </div>
+              </div>
+
+              <section class="transparency-section">
+                <h3>Distribuição por Cidade</h3>
+                <div id="transparencyCities" class="cities-list">
+                  <p class="empty-state">Sem dados ainda</p>
+                </div>
+              </section>
+
+              <section class="transparency-section">
+                <h3>Status de Pagamento</h3>
+                <div id="transparencyPayment" class="payment-status">
+                  <p class="empty-state">Sem dados ainda</p>
+                </div>
+              </section>
+            </article>
+          </div>
+        </section>
+
+        <section class="view" id="checkin" aria-labelledby="checkinTitle">
+          <div class="checkin-grid">
+            <form class="panel checkin-panel" id="checkinForm">
+              <div class="section-title">
+                <p>Dia do evento</p>
+                <h2 id="checkinTitle">Confirmar entrada</h2>
+              </div>
+
+              <label>
+                <span>Código, nome ou telefone</span>
+                <input id="checkinQuery" type="search" autocomplete="off" placeholder="Ex.: GABU-2026-ABC123">
+              </label>
+
+              <button class="primary-action" type="submit">Procurar participante</button>
+              <p class="form-status" id="checkinStatus" role="status" aria-live="polite"></p>
+
+              <div class="match-list" id="checkinMatches" hidden>
+                <strong>Resultados encontrados</strong>
+                <div id="checkinMatchList"></div>
+              </div>
+            </form>
+
+            <aside class="panel checkin-result" id="checkinResult" hidden>
+              <div class="checkin-badge" id="checkinBadge">Pendente</div>
+
+              <div class="section-title">
+                <p>Participante</p>
+                <h2 id="checkinName">-</h2>
+              </div>
+
+              <dl class="detail-list">
+                <div>
+                  <dt>Código</dt>
+                  <dd class="code-text" id="checkinCode">-</dd>
+                </div>
+                <div>
+                  <dt>Pessoas</dt>
+                  <dd id="checkinGuests">-</dd>
+                </div>
+                <div>
+                  <dt>Contribuição</dt>
+                  <dd id="checkinContribution">-</dd>
+                </div>
+                <div>
+                  <dt>Estado</dt>
+                  <dd id="checkinPaymentStatus">-</dd>
+                </div>
+                <div>
+                  <dt>Contacto</dt>
+                  <dd id="checkinContact">-</dd>
+                </div>
+                <div>
+                  <dt>Entrada</dt>
+                  <dd id="checkinTime">Ainda não confirmada</dd>
+                </div>
+              </dl>
+
+              <div class="button-row checkin-actions">
+                <button type="button" class="primary-action compact-action" id="confirmCheckin">Confirmar entrada</button>
+                <button type="button" class="secondary-action" id="openCheckinPass">Ver passe</button>
+                <button type="button" class="danger-action" id="undoCheckin">Anular</button>
+              </div>
+            </aside>
+
+            <div class="empty-state" id="checkinEmptyResult">
+              <p>Procura um participante para confirmar a entrada.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="participants" aria-labelledby="participantsTitle">
+          <div class="panel table-panel">
+            <div class="table-tools">
+              <div class="section-title">
+                <p>Organização</p>
+                <h2 id="participantsTitle">Lista de participantes</h2>
+              </div>
+
+              <div class="tool-row">
+                <input id="participantSearch" type="search" placeholder="Procurar nome, telefone ou código">
+                <button type="button" class="secondary-action" id="exportCsv">Exportar CSV</button>
+                <button type="button" class="danger-action" id="clearLocal">Limpar local</button>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th>Pessoas</th>
+                    <th>Contribuição</th>
+                    <th>Estado</th>
+                    <th>Entrada</th>
+                    <th>Contacto</th>
+                  </tr>
+                </thead>
+                <tbody id="participantsBody"></tbody>
+              </table>
+            </div>
+
+            <p class="empty-table" id="emptyTable">Ainda não há participantes registados.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog class="admin-dialog" id="adminDialog">
+      <form class="panel admin-panel" id="adminLoginForm" method="dialog">
+        <div class="section-title">
+          <p>Acesso reservado</p>
+          <h2>Entrar como organizador</h2>
+        </div>
+
+        <label>
+          <span>Senha</span>
+          <input id="adminPin" type="password" autocomplete="current-password" placeholder="Senha da organização">
+        </label>
+
+        <div class="button-row admin-dialog-actions">
+          <button class="primary-action compact-action" type="submit">Entrar</button>
+          <button class="secondary-action" type="button" id="adminCancelButton">Cancelar</button>
+        </div>
+
+        <p class="form-status" id="adminLoginStatus" role="status" aria-live="polite"></p>
+      </form>
+    </dialog>
+
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="assets/js/app.js"></script>
+  </body>
+</html>
