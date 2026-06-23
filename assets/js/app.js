@@ -367,6 +367,14 @@ function updateParticipant(updatedParticipant) {
   return participant;
 }
 
+function getPassUrl(participant) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("code", participant.code);
+  return url.toString();
+}
+
 function participantText(participant) {
   return [
     "Passe Solidário Gabú Hamburg",
@@ -374,7 +382,25 @@ function participantText(participant) {
     `Código: ${participant.code}`,
     `Pessoas: ${participant.guests}`,
     `Contribuição: ${euroFormatter.format(participant.contribution)}`,
+    `Link: ${getPassUrl(participant)}`,
   ].join("\n");
+}
+
+function openPassFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const code = safeTrim(params.get("code"));
+
+  if (!code) {
+    return;
+  }
+
+  const participant = state.participants.find((item) => item.code === code);
+  if (!participant) {
+    return;
+  }
+
+  renderPass(participant);
+  showView("pass");
 }
 
 function showView(viewId) {
@@ -533,7 +559,7 @@ function renderPass(participant) {
   elements.passCode.textContent = participant.code;
   elements.passContribution.textContent = euroFormatter.format(participant.contribution);
   elements.passMeta.textContent = `${participant.guests} pessoa(s) - ${participant.paymentStatus}`;
-  generateQRCode(participant.code);
+  generateQRCode(participant);
 }
 
 function renderAll() {
@@ -657,8 +683,9 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-function generateQRCode(code) {
+function generateQRCode(participant) {
   const container = elements.passSeal;
+  const passUrl = getPassUrl(participant);
   
   // Limpar conteúdo anterior
   container.innerHTML = "";
@@ -668,7 +695,7 @@ function generateQRCode(code) {
     try {
       // Gerar novo QR code
       new QRCode(container, {
-        text: code,
+        text: passUrl,
         width: 168,
         height: 168,
         colorDark: "#17212b",
@@ -677,11 +704,11 @@ function generateQRCode(code) {
       });
     } catch (error) {
       console.warn("Erro ao gerar QR code:", error);
-      drawSealFallback(code);
+      drawSealFallback(participant.code);
     }
   } else {
     // Fallback: desenhar padrão visual se biblioteca não carregar
-    drawSealFallback(code);
+    drawSealFallback(participant.code);
   }
 }
 
@@ -940,9 +967,6 @@ elements.sharePass.addEventListener("click", () => {
   }
 
   const text = encodeURIComponent(participantText(state.currentPass));
-  // Para enviar para um número específico, use:
-  // window.open(`https://wa.me/[NUMERO_WHATSAPP_COM_CÓDIGO_PAÍS]/?text=${text}`, "_blank", "noopener");
-  // Exemplo: https://wa.me/49123456789/?text=${text} (Alemanha)
   window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
 });
 
@@ -975,6 +999,7 @@ async function initializeApp() {
   loadLocalParticipants();
   renderAll();
   setAdminState(false);
+  openPassFromQuery();
   await checkAdminSession();
 
   if (state.isAdmin) {
