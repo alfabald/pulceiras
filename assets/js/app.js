@@ -112,8 +112,15 @@ function makeCode() {
 }
 
 function normalizeParticipant(participant) {
+  const adultsRaw = Number.parseInt(participant.adults, 10);
+  const childrenRaw = Number.parseInt(participant.childrenUnder16, 10);
+  const adults = Number.isFinite(adultsRaw) ? Math.max(0, adultsRaw) : Math.max(0, Number.parseInt(participant.guests, 10) || 1);
+  const childrenUnder16 = Number.isFinite(childrenRaw) ? Math.max(0, childrenRaw) : 0;
+  const guests = Math.max(1, adults + childrenUnder16);
+  const autoContribution = adults * 10 + childrenUnder16 * 5;
   const contribution = Math.max(0, Number.parseFloat(participant.contribution) || 0);
-  const agreedAmount = Math.max(0, Number.parseFloat(participant.agreedAmount ?? contribution) || 0);
+  const contributionValue = contribution > 0 ? contribution : autoContribution;
+  const agreedAmount = Math.max(0, Number.parseFloat(participant.agreedAmount ?? contributionValue) || 0);
   const amountConfirmed = Boolean(participant.amountConfirmed);
 
   return {
@@ -123,11 +130,14 @@ function normalizeParticipant(participant) {
     email: safeTrim(participant.email),
     city: safeTrim(participant.city),
     activityName: safeTrim(participant.activityName) || "Atividade geral",
-    guests: Math.max(1, Number.parseInt(participant.guests, 10) || 1),
-    contribution,
+    adults,
+    childrenUnder16,
+    guests,
+    contribution: contributionValue,
     agreedAmount,
     amountConfirmed,
     amountConfirmedAt: safeTrim(participant.amountConfirmedAt),
+    committeeAgreement: safeTrim(participant.committeeAgreement) || "Padrão da comissão",
     paymentStatus:
       safeTrim(participant.paymentStatus) ||
       (amountConfirmed ? "Confirmado pelo organizador" : "Aguardando confirmação do organizador"),
@@ -510,7 +520,8 @@ function participantText(participant) {
     `Atividade: ${participant.activityName}`,
     `Nome: ${participant.fullName}`,
     `Código: ${participant.code}`,
-    `Pessoas: ${participant.guests}`,
+    `Pessoas: ${participant.guests} (Adultos: ${participant.adults}, Crianças: ${participant.childrenUnder16})`,
+    `Acordo: ${participant.committeeAgreement}`,
     `Montante acordado: ${euroFormatter.format(participant.agreedAmount || participant.contribution)}`,
     `Validade: ${passStatusText(participant)}`,
     `Link: ${getPassUrl(participant)}`,
@@ -593,6 +604,7 @@ function renderParticipants() {
       participant.phone,
       participant.email,
       participant.city,
+      participant.committeeAgreement,
       participant.paymentStatus,
     ].join(" ").toLowerCase();
     return haystack.includes(term);
@@ -610,10 +622,10 @@ function renderParticipants() {
       <td><strong class="code-text">${escapeHtml(participant.code)}</strong></td>
       <td>${escapeHtml(participant.activityName || "Atividade geral")}</td>
       <td>${escapeHtml(participant.fullName)}<br><small>${escapeHtml(participant.city || "-")}</small></td>
-      <td>${participant.guests}</td>
+      <td>${participant.guests}<br><small>${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)</small></td>
       <td>${escapeHtml(euroFormatter.format(agreedAmount))}</td>
       <td>${statusChip}</td>
-      <td>${escapeHtml(participant.paymentStatus)}</td>
+      <td>${escapeHtml(participant.paymentStatus)}<br><small>${escapeHtml(participant.committeeAgreement || "-")}</small></td>
       <td>${renderEntryStatus(participant)}</td>
       <td>${escapeHtml(participant.phone)}${participant.email ? `<br><small>${escapeHtml(participant.email)}</small>` : ""}</td>
       <td>
@@ -722,7 +734,7 @@ function renderPass(participant) {
   elements.passStatus.textContent = valid ? "Válido" : "Pendente";
   elements.passStatus.classList.toggle("is-valid", valid);
   elements.passStatus.classList.toggle("is-pending", !valid);
-  elements.passMeta.textContent = `${participant.guests} pessoa(s) - ${participant.paymentStatus}`;
+  elements.passMeta.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)) - ${participant.paymentStatus} - ${participant.committeeAgreement}`;
   generateQRCode(participant);
 
   if (participantIsValid(participant)) {
@@ -938,15 +950,19 @@ function toCsvValue(value) {
 }
 
 function exportCsv() {
-  const header = ["Código", "Nome", "Telefone", "Email", "Cidade", "Pessoas", "Contribuição", "Estado", "Entrada", "Observação"];
+  const header = ["Código", "Atividade", "Nome", "Telefone", "Email", "Cidade", "Adultos", "Crianças<=16", "Pessoas", "Contribuição", "Acordo comissão", "Estado", "Entrada", "Observação"];
   const rows = state.participants.map((participant) => [
     participant.code,
+    participant.activityName,
     participant.fullName,
     participant.phone,
     participant.email,
     participant.city,
+    participant.adults,
+    participant.childrenUnder16,
     participant.guests,
-    participant.contribution.toFixed(2),
+    (participant.agreedAmount || participant.contribution).toFixed(2),
+    participant.committeeAgreement,
     participant.paymentStatus,
     participant.checkedInAt,
     participant.note,
@@ -1005,9 +1021,18 @@ elements.form.addEventListener("submit", async (event) => {
   const formData = new FormData(elements.form);
   const email = safeTrim(formData.get("email"));
   const confirmEmail = safeTrim(formData.get("confirmEmail"));
+  const adults = Math.max(0, Number.parseInt(formData.get("adults"), 10) || 0);
+  const childrenUnder16 = Math.max(0, Number.parseInt(formData.get("childrenUnder16"), 10) || 0);
+  const guests = adults + childrenUnder16;
+  const contribution = adults * 10 + childrenUnder16 * 5;
 
   if (email && confirmEmail && email.toLowerCase() !== confirmEmail.toLowerCase()) {
     elements.formStatus.textContent = "Email e confirmação de email não coincidem.";
+    return;
+  }
+
+  if (guests <= 0) {
+    elements.formStatus.textContent = "Informa pelo menos 1 pessoa (adulto ou criança).";
     return;
   }
 
@@ -1019,9 +1044,12 @@ elements.form.addEventListener("submit", async (event) => {
     email,
     confirmEmail,
     city: formData.get("city"),
-    guests: formData.get("guests"),
-    contribution: formData.get("contribution"),
-    agreedAmount: formData.get("contribution"),
+    adults,
+    childrenUnder16,
+    guests,
+    contribution,
+    agreedAmount: contribution,
+    committeeAgreement: formData.get("committeeAgreement"),
     amountConfirmed: false,
     paymentStatus: "Aguardando confirmação do organizador",
     note: formData.get("note"),
@@ -1042,12 +1070,24 @@ elements.form.addEventListener("submit", async (event) => {
   renderAll();
   showView("pass");
   elements.form.reset();
-  elements.form.elements.guests.value = "1";
+  elements.form.elements.adults.value = "1";
+  elements.form.elements.childrenUnder16.value = "0";
   elements.form.elements.contribution.value = "10";
+  elements.form.elements.committeeAgreement.value = "Padrão da comissão";
   elements.form.elements.paymentStatus.value = "Aguardando confirmação do organizador";
   elements.formStatus.textContent = "Passe criado com sucesso.";
   submitButton.disabled = false;
 });
+
+function updateContributionFromGuests() {
+  const adults = Math.max(0, Number.parseInt(elements.form.elements.adults.value, 10) || 0);
+  const childrenUnder16 = Math.max(0, Number.parseInt(elements.form.elements.childrenUnder16.value, 10) || 0);
+  const contribution = adults * 10 + childrenUnder16 * 5;
+  elements.form.elements.contribution.value = contribution.toFixed(2);
+}
+
+elements.form.elements.adults.addEventListener("input", updateContributionFromGuests);
+elements.form.elements.childrenUnder16.addEventListener("input", updateContributionFromGuests);
 
 elements.checkinForm.addEventListener("submit", (event) => {
   event.preventDefault();

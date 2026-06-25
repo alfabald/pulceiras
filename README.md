@@ -10,6 +10,8 @@ Sistema para substituir pulseiras físicas por passes digitais com QR e confirma
 - O passe fica pendente até o organizador confirmar o montante acordado.
 - O QR pode ser validado publicamente por comissão no dia da atividade.
 - Quando o passe está aberto, o sistema verifica periodicamente e notifica quando for validado.
+- Regra de contribuição automática: 10 EUR por adulto (17+) e 5 EUR por criança (até 16 anos).
+- Inclui menu de acordo com a comissão organizadora no momento da inscrição.
 - Confirma a entrada dos participantes no dia do evento.
 - Protege as áreas `Entrada` e `Participantes` com acesso de organizador.
 - Guarda os dados no navegador quando aberto diretamente.

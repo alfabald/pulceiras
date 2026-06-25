@@ -332,6 +332,12 @@ textarea {
   outline: none;
 }
 
+input[readonly] {
+  background: #eef6f1;
+  color: #234635;
+  font-weight: 700;
+}
+
 input,
 select {
   min-height: 44px;

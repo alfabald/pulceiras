@@ -102,7 +102,25 @@ function normalize_participant(array $input): array
         $code = make_code();
     }
 
-    $contribution = normalize_amount($input['contribution'] ?? 0);
+    $hasAdults = array_key_exists('adults', $input);
+    $hasChildren = array_key_exists('childrenUnder16', $input);
+    $childrenUnder16 = max(0, min(50, (int) ($input['childrenUnder16'] ?? 0)));
+
+    if ($hasAdults || $hasChildren) {
+        $adults = max(0, min(50, (int) ($input['adults'] ?? 0)));
+        $guests = $adults + $childrenUnder16;
+        if ($guests <= 0) {
+            $adults = 1;
+            $guests = 1;
+        }
+    } else {
+        $guests = max(1, min(50, (int) ($input['guests'] ?? 1)));
+        $adults = $guests;
+        $childrenUnder16 = 0;
+    }
+
+    $baseContribution = ($adults * 10) + ($childrenUnder16 * 5);
+    $contribution = normalize_amount($input['contribution'] ?? $baseContribution);
     $agreedAmountRaw = array_key_exists('agreedAmount', $input)
         ? $input['agreedAmount']
         : ($input['contribution'] ?? 0);
@@ -122,11 +140,14 @@ function normalize_participant(array $input): array
         'email' => clean_text($input['email'] ?? '', 120),
         'city' => clean_text($input['city'] ?? '', 100),
         'activityName' => clean_text($input['activityName'] ?? 'Atividade geral', 120),
-        'guests' => max(1, min(50, (int) ($input['guests'] ?? 1))),
+        'adults' => $adults,
+        'childrenUnder16' => $childrenUnder16,
+        'guests' => $guests,
         'contribution' => $contribution,
         'agreedAmount' => $agreedAmount,
         'amountConfirmed' => $amountConfirmed,
         'amountConfirmedAt' => $amountConfirmedAt,
+        'committeeAgreement' => clean_text($input['committeeAgreement'] ?? 'Padrão da comissão', 120),
         'paymentStatus' => clean_text(
             $input['paymentStatus'] ?? ($amountConfirmed ? 'Confirmado pelo organizador' : 'Aguardando confirmação do organizador'),
             90
