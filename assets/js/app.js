@@ -1,9 +1,11 @@
 const STORAGE_KEY = "gabuHamburgParticipantsV1";
+const PRICING_KEY = "gabuPricingV1";
 const API_REGISTER = "api/register.php";
 const API_PARTICIPANTS = "api/participants.php";
 const API_CHECKIN = "api/checkin.php";
 const API_CONFIRM_PAYMENT = "api/confirm-payment.php";
 const API_PASS = "api/pass.php";
+const API_DELETE = "api/delete.php";
 const API_LOGIN = "api/login.php";
 const API_LOGOUT = "api/logout.php";
 const API_SESSION = "api/session.php";
@@ -15,11 +17,16 @@ const state = {
   currentCheckin: null,
   isAdmin: false,
   passPollingTimer: null,
+  scannerStream: null,
+  scannerAnimFrame: null,
+  pricing: { adultPrice: 10, childPrice: 5 },
 };
 
 const elements = {
   tabs: document.querySelectorAll(".tab"),
   adminOnlyTabs: document.querySelectorAll("[data-admin-only]"),
+  organizerTabs: document.querySelectorAll("[data-organizer-tab]"),
+  registerWorkGrid: document.querySelector("#register .work-grid"),
   views: document.querySelectorAll(".view"),
   form: document.querySelector("#signupForm"),
   formStatus: document.querySelector("#formStatus"),
@@ -35,6 +42,28 @@ const elements = {
   copyPass: document.querySelector("#copyPass"),
   sharePass: document.querySelector("#sharePass"),
   printPass: document.querySelector("#printPass"),
+  confirmedCount: document.querySelector("#confirmedCount"),
+  confirmedPassesList: document.querySelector("#confirmedPassesList"),
+  confirmedEmpty: document.querySelector("#confirmedEmpty"),
+  startScannerBtn: document.querySelector("#startScannerBtn"),
+  stopScannerBtn: document.querySelector("#stopScannerBtn"),
+  scannerVideo: document.querySelector("#scannerVideo"),
+  scannerCanvas: document.querySelector("#scannerCanvas"),
+  scannerStatus: document.querySelector("#scannerStatus"),
+  scannerResultPanel: document.querySelector("#scannerResultPanel"),
+  scannerBadge: document.querySelector("#scannerBadge"),
+  scannerName: document.querySelector("#scannerName"),
+  scannerCode: document.querySelector("#scannerCode"),
+  scannerActivity: document.querySelector("#scannerActivity"),
+  scannerGuests: document.querySelector("#scannerGuests"),
+  scannerContribution: document.querySelector("#scannerContribution"),
+  scannerValidity: document.querySelector("#scannerValidity"),
+  scannerEntry: document.querySelector("#scannerEntry"),
+  scannerEmptyResult: document.querySelector("#scannerEmptyResult"),
+  adultPriceInput: document.querySelector("#adultPriceInput"),
+  childPriceInput: document.querySelector("#childPriceInput"),
+  savePricingBtn: document.querySelector("#savePricingBtn"),
+  contributionHint: document.querySelector("#contributionHint"),
   participantsBody: document.querySelector("#participantsBody"),
   emptyTable: document.querySelector("#emptyTable"),
   participantSearch: document.querySelector("#participantSearch"),
@@ -117,7 +146,7 @@ function normalizeParticipant(participant) {
   const adults = Number.isFinite(adultsRaw) ? Math.max(0, adultsRaw) : Math.max(0, Number.parseInt(participant.guests, 10) || 1);
   const childrenUnder16 = Number.isFinite(childrenRaw) ? Math.max(0, childrenRaw) : 0;
   const guests = Math.max(1, adults + childrenUnder16);
-  const autoContribution = adults * 10 + childrenUnder16 * 5;
+  const autoContribution = adults * state.pricing.adultPrice + childrenUnder16 * state.pricing.childPrice;
   const contribution = Math.max(0, Number.parseFloat(participant.contribution) || 0);
   const contributionValue = contribution > 0 ? contribution : autoContribution;
   const agreedAmount = Math.max(0, Number.parseFloat(participant.agreedAmount ?? contributionValue) || 0);
@@ -153,6 +182,27 @@ function participantIsValid(participant) {
 
 function passStatusText(participant) {
   return participantIsValid(participant) ? "Válido" : "Pendente";
+}
+
+function loadPricing() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRICING_KEY) || "{}");
+    if (saved.adultPrice > 0) state.pricing.adultPrice = Number(saved.adultPrice);
+    if (saved.childPrice >= 0) state.pricing.childPrice = Number(saved.childPrice);
+  } catch {}
+  updateContributionHint();
+}
+
+function savePricing() {
+  localStorage.setItem(PRICING_KEY, JSON.stringify(state.pricing));
+}
+
+function updateContributionHint() {
+  if (elements.contributionHint) {
+    elements.contributionHint.textContent = `(${euroFormatter.format(state.pricing.adultPrice)} adulto · ${euroFormatter.format(state.pricing.childPrice)} criança)`;
+  }
+  if (elements.adultPriceInput) elements.adultPriceInput.value = state.pricing.adultPrice;
+  if (elements.childPriceInput) elements.childPriceInput.value = state.pricing.childPrice;
 }
 
 function saveLocalParticipants() {
@@ -375,7 +425,7 @@ function startPassWatcher(participant) {
 }
 
 function isAdminView(viewId) {
-  return viewId === "checkin" || viewId === "participants";
+  return viewId === "checkin" || viewId === "participants" || viewId === "scanner" || viewId === "transparency";
 }
 
 function activeViewId() {
@@ -388,6 +438,12 @@ function setAdminState(isAdmin, options = {}) {
   elements.adminOnlyTabs.forEach((tab) => {
     tab.hidden = !isAdmin;
   });
+  elements.organizerTabs.forEach((tab) => {
+    tab.hidden = !isAdmin;
+  });
+  if (elements.registerWorkGrid) {
+    elements.registerWorkGrid.classList.toggle("is-single", !isAdmin);
+  }
   elements.adminStatusLabel.textContent = isAdmin ? "Organizador" : "Público";
   elements.adminStatusLabel.classList.toggle("is-active", isAdmin);
   elements.adminLoginButton.hidden = isAdmin;
@@ -571,6 +627,12 @@ function showView(viewId) {
   if (viewId === "transparency") {
     renderTransparency();
   }
+  if (viewId === "pass") {
+    renderConfirmedPasses();
+  }
+  if (viewId !== "scanner") {
+    stopScanner();
+  }
 }
 
 function renderMetrics() {
@@ -635,6 +697,7 @@ function renderParticipants() {
           <button type="button" class="secondary-action" data-confirm-code="${escapeHtml(participant.code)}">Confirmar</button>
         </div>`}
       </td>
+      <td><button type="button" class="danger-action" data-delete-code="${escapeHtml(participant.code)}">Excluir</button></td>
     `;
     elements.participantsBody.appendChild(row);
   });
@@ -722,6 +785,24 @@ function renderTransparency() {
   }
 }
 
+function renderConfirmedPasses() {
+  const confirmed = state.participants.filter((p) => participantIsValid(p));
+  if (elements.confirmedCount) elements.confirmedCount.textContent = confirmed.length;
+  if (elements.confirmedEmpty) elements.confirmedEmpty.hidden = confirmed.length > 0;
+  if (!elements.confirmedPassesList) return;
+  elements.confirmedPassesList.innerHTML = "";
+  confirmed.forEach((p) => {
+    const card = document.createElement("div");
+    card.className = "confirmed-pass-card";
+    card.innerHTML = `
+      <strong>${escapeHtml(p.fullName)}</strong>
+      <span>${escapeHtml(p.activityName)}</span>
+      <span>${p.guests} pessoa(s)</span>
+    `;
+    elements.confirmedPassesList.appendChild(card);
+  });
+}
+
 function renderPass(participant) {
   state.currentPass = participant;
   elements.emptyPass.hidden = true;
@@ -735,6 +816,9 @@ function renderPass(participant) {
   elements.passStatus.classList.toggle("is-valid", valid);
   elements.passStatus.classList.toggle("is-pending", !valid);
   elements.passMeta.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)) - ${participant.paymentStatus} - ${participant.committeeAgreement}`;
+  elements.copyPass.disabled = !valid;
+  elements.sharePass.disabled = !valid;
+  elements.printPass.disabled = !valid;
   generateQRCode(participant);
 
   if (participantIsValid(participant)) {
@@ -872,10 +956,17 @@ function escapeHtml(value) {
 
 function generateQRCode(participant) {
   const container = elements.passSeal;
-  const passUrl = getPassUrl(participant);
-  
-  // Limpar conteúdo anterior
   container.innerHTML = "";
+
+  if (!participantIsValid(participant)) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "pass-placeholder";
+    placeholder.innerHTML = "<strong>QR bloqueado</strong><span>O acesso de entrada so fica disponivel depois da confirmacao do organizador.</span>";
+    container.appendChild(placeholder);
+    return;
+  }
+
+  const passUrl = getPassUrl(participant);
   
   // Usar QRCode.js se disponível
   if (typeof QRCode !== "undefined") {
@@ -1062,32 +1153,43 @@ elements.form.addEventListener("submit", async (event) => {
 
   const submitButton = elements.form.querySelector("button[type='submit']");
   submitButton.disabled = true;
-  elements.formStatus.textContent = "A criar o passe...";
+  elements.formStatus.textContent = "A enviar cadastro...";
 
   const savedParticipant = await saveParticipant(participant);
   mergeParticipants([savedParticipant]);
-  renderPass(savedParticipant);
   renderAll();
-  showView("pass");
   elements.form.reset();
   elements.form.elements.adults.value = "1";
   elements.form.elements.childrenUnder16.value = "0";
   elements.form.elements.contribution.value = "10";
   elements.form.elements.committeeAgreement.value = "Padrão da comissão";
-  elements.form.elements.paymentStatus.value = "Aguardando confirmação do organizador";
-  elements.formStatus.textContent = "Passe criado com sucesso.";
+  elements.formStatus.textContent = `Cadastro enviado com sucesso. Codigo de referencia: ${savedParticipant.code}. Vais aguardar a confirmacao da organizacao para receber o QR de entrada.`;
   submitButton.disabled = false;
 });
 
 function updateContributionFromGuests() {
   const adults = Math.max(0, Number.parseInt(elements.form.elements.adults.value, 10) || 0);
   const childrenUnder16 = Math.max(0, Number.parseInt(elements.form.elements.childrenUnder16.value, 10) || 0);
-  const contribution = adults * 10 + childrenUnder16 * 5;
+  const contribution = adults * state.pricing.adultPrice + childrenUnder16 * state.pricing.childPrice;
   elements.form.elements.contribution.value = contribution.toFixed(2);
 }
 
 elements.form.elements.adults.addEventListener("input", updateContributionFromGuests);
 elements.form.elements.childrenUnder16.addEventListener("input", updateContributionFromGuests);
+
+if (elements.savePricingBtn) {
+  elements.savePricingBtn.addEventListener("click", () => {
+    const a = Number.parseFloat(elements.adultPriceInput.value);
+    const c = Number.parseFloat(elements.childPriceInput.value);
+    if (Number.isFinite(a) && a >= 0) state.pricing.adultPrice = a;
+    if (Number.isFinite(c) && c >= 0) state.pricing.childPrice = c;
+    savePricing();
+    updateContributionHint();
+    updateContributionFromGuests();
+    elements.savePricingBtn.textContent = "Guardado ✓";
+    setTimeout(() => { elements.savePricingBtn.textContent = "Guardar"; }, 1800);
+  });
+}
 
 elements.checkinForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -1128,6 +1230,17 @@ elements.checkinMatchList.addEventListener("click", (event) => {
 });
 
 elements.participantsBody.addEventListener("click", async (event) => {
+  const deleteBtn = event.target.closest("button[data-delete-code]");
+  if (deleteBtn) {
+    if (!state.isAdmin) { openAdminDialog(); return; }
+    const code = deleteBtn.dataset.deleteCode;
+    const participant = state.participants.find((p) => p.code === code);
+    const name = participant?.fullName || code;
+    if (!window.confirm(`Confirmas a exclusão de "${name}"? Esta ação não pode ser revertida.`)) return;
+    await deleteParticipant(code);
+    return;
+  }
+
   const button = event.target.closest("button[data-confirm-code]");
   if (!button) {
     return;
@@ -1152,8 +1265,10 @@ elements.participantsBody.addEventListener("click", async (event) => {
     button.disabled = true;
     const updated = await confirmPayment(participant, agreedAmount);
     updateParticipant(updated);
+    renderPass(updated);
     renderAll();
-    elements.formStatus.textContent = `Montante confirmado para ${updated.fullName}. Passe válido.`;
+    showView("pass");
+    elements.formStatus.textContent = `Montante confirmado para ${updated.fullName}. QR gerado e passe válido.`;
   } catch (error) {
     elements.formStatus.textContent = error.message || "Não foi possível confirmar o montante.";
   } finally {
@@ -1212,7 +1327,7 @@ elements.openCheckinPass.addEventListener("click", () => {
 });
 
 elements.copyPass.addEventListener("click", async () => {
-  if (!state.currentPass) {
+  if (!state.currentPass || !participantIsValid(state.currentPass)) {
     return;
   }
 
@@ -1223,22 +1338,173 @@ elements.copyPass.addEventListener("click", async () => {
   }, 1600);
 });
 
-elements.sharePass.addEventListener("click", () => {
-  if (!state.currentPass) {
+elements.sharePass.addEventListener("click", async () => {
+  if (!state.currentPass || !participantIsValid(state.currentPass)) {
     return;
   }
 
-  const text = encodeURIComponent(participantText(state.currentPass));
-  window.open(`https://wa.me/?text=${text}`, "_blank", "noopener");
+  const text = participantText(state.currentPass);
+  const canvas = elements.passSeal.querySelector("canvas");
+
+  if (navigator.share && canvas) {
+    canvas.toBlob(async (blob) => {
+      if (blob) {
+        const file = new File([blob], "passe-qr.png", { type: "image/png" });
+        const shareData = { title: "Passe de Atividade", text, files: [file] };
+        if (navigator.canShare && navigator.canShare(shareData)) {
+          try { await navigator.share(shareData); return; } catch {}
+        }
+      }
+      try { await navigator.share({ title: "Passe de Atividade", text }); return; } catch {}
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+    });
+    return;
+  }
+
+  if (navigator.share) {
+    try { await navigator.share({ title: "Passe de Atividade", text }); return; } catch {}
+  }
+
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
 });
 
 elements.printPass.addEventListener("click", () => {
+  if (!state.currentPass || !participantIsValid(state.currentPass)) {
+    return;
+  }
+
   showView("pass");
   window.print();
 });
 
 elements.participantSearch.addEventListener("input", renderParticipants);
 elements.exportCsv.addEventListener("click", exportCsv);
+
+async function deleteParticipant(code) {
+  if (!isFileMode()) {
+    try {
+      const response = await fetch(API_DELETE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      if (!response.ok) {
+        const d = await response.json().catch(() => ({}));
+        elements.formStatus.textContent = d.error || "Não foi possível excluir.";
+        return;
+      }
+    } catch {
+      // fall through to local delete
+    }
+  }
+  const index = state.participants.findIndex((p) => p.code === code);
+  if (index >= 0) {
+    state.participants.splice(index, 1);
+    saveLocalParticipants();
+    renderAll();
+    elements.formStatus.textContent = "Participante excluído com sucesso.";
+  }
+}
+
+async function startScanner() {
+  if (!elements.scannerVideo) return;
+  try {
+    state.scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    elements.scannerVideo.srcObject = state.scannerStream;
+    await elements.scannerVideo.play();
+    elements.startScannerBtn.disabled = true;
+    elements.stopScannerBtn.disabled = false;
+    elements.scannerStatus.textContent = "Câmara ativa. Aponta o QR code.";
+    elements.scannerEmptyResult.hidden = false;
+    elements.scannerResultPanel.hidden = true;
+    scanLoop();
+  } catch (err) {
+    elements.scannerStatus.textContent = `Erro ao aceder à câmara: ${err.message}`;
+  }
+}
+
+function stopScanner() {
+  if (state.scannerStream) {
+    state.scannerStream.getTracks().forEach((t) => t.stop());
+    state.scannerStream = null;
+  }
+  if (state.scannerAnimFrame) {
+    cancelAnimationFrame(state.scannerAnimFrame);
+    state.scannerAnimFrame = null;
+  }
+  if (elements.scannerVideo) elements.scannerVideo.srcObject = null;
+  if (elements.startScannerBtn) elements.startScannerBtn.disabled = false;
+  if (elements.stopScannerBtn) elements.stopScannerBtn.disabled = true;
+  if (elements.scannerStatus) elements.scannerStatus.textContent = "";
+}
+
+function scanLoop() {
+  if (!state.scannerStream) return;
+  const video = elements.scannerVideo;
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = elements.scannerCanvas;
+    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (typeof jsQR !== "undefined") {
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+      if (code) {
+        handleScannedCode(code.data);
+        stopScanner();
+        return;
+      }
+    }
+  }
+  state.scannerAnimFrame = requestAnimationFrame(scanLoop);
+}
+
+async function handleScannedCode(data) {
+  let code = safeTrim(data);
+  try {
+    const url = new URL(data);
+    code = safeTrim(url.searchParams.get("code")) || code;
+  } catch {}
+
+  let participant = state.participants.find((p) => p.code === code);
+  if (!participant) {
+    participant = await loadPublicPass(code);
+    if (participant) mergeParticipants([participant]);
+  }
+
+  elements.scannerEmptyResult.hidden = true;
+  elements.scannerResultPanel.hidden = false;
+
+  if (!participant) {
+    elements.scannerBadge.textContent = "Não encontrado";
+    elements.scannerBadge.className = "scanner-badge is-invalid";
+    elements.scannerName.textContent = "Participante desconhecido";
+    elements.scannerCode.textContent = code;
+    elements.scannerActivity.textContent = "-";
+    elements.scannerGuests.textContent = "-";
+    elements.scannerContribution.textContent = "-";
+    elements.scannerValidity.textContent = "Inválido";
+    elements.scannerEntry.textContent = "-";
+    elements.scannerStatus.textContent = `Código scaneado: ${code}. Passe não encontrado.`;
+    return;
+  }
+
+  const valid = participantIsValid(participant);
+  elements.scannerBadge.textContent = valid ? (participant.checkedInAt ? "✅ Já deu entrada" : "✅ Válido - pode entrar") : "❌ Pendente - sem validade";
+  elements.scannerBadge.className = `scanner-badge ${valid ? "is-valid" : "is-invalid"}`;
+  elements.scannerName.textContent = participant.fullName;
+  elements.scannerCode.textContent = participant.code;
+  elements.scannerActivity.textContent = participant.activityName;
+  elements.scannerGuests.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s))`;
+  elements.scannerContribution.textContent = euroFormatter.format(participant.agreedAmount || participant.contribution);
+  elements.scannerValidity.textContent = valid ? "Válido" : "Pendente";
+  elements.scannerEntry.textContent = participant.checkedInAt ? formatDateTime(participant.checkedInAt) : "Ainda não confirmada";
+  elements.scannerStatus.textContent = `Scan concluído: ${participant.fullName}`;
+}
+
+if (elements.startScannerBtn) elements.startScannerBtn.addEventListener("click", startScanner);
+if (elements.stopScannerBtn) elements.stopScannerBtn.addEventListener("click", stopScanner);
 elements.clearLocal.addEventListener("click", () => {
   const confirmed = window.confirm("Queres apagar apenas os dados guardados neste navegador?");
   if (!confirmed) {
@@ -1258,6 +1524,7 @@ elements.clearLocal.addEventListener("click", () => {
 });
 
 async function initializeApp() {
+  loadPricing();
   loadLocalParticipants();
   renderAll();
   setAdminState(false);

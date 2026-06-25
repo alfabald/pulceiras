@@ -22,10 +22,11 @@
 
         <nav class="tabs" aria-label="Áreas do passe solidário">
           <button class="tab is-active" type="button" data-view="register">Inscrição</button>
-          <button class="tab" type="button" data-view="pass">Passe</button>
-          <button class="tab" type="button" data-view="transparency">Transparência</button>
+          <button class="tab" type="button" data-view="pass">Confirmados</button>
           <button class="tab" type="button" data-view="checkin" data-admin-only hidden>Entrada</button>
+          <button class="tab" type="button" data-view="scanner" data-admin-only hidden>Scanner QR</button>
           <button class="tab" type="button" data-view="participants" data-admin-only hidden>Participantes</button>
+          <button class="tab" type="button" data-view="transparency" data-admin-only hidden>Transparência</button>
         </nav>
 
         <div class="admin-controls">
@@ -47,7 +48,7 @@
           </div>
           <div>
             <span>Contacto</span>
-            <strong>Fale comigo para ativar no seu evento</strong>
+            <a href="https://www.instagram.com/alfa0ficial" target="_blank" rel="noopener noreferrer" class="instagram-link">&#128248; @alfa0ficial</a>
           </div>
         </section>
 
@@ -55,8 +56,8 @@
           <div class="work-grid">
             <form class="panel form-panel" id="signupForm">
               <div class="section-title">
-                <p>Nova inscrição</p>
-                <h2 id="registerTitle">Criar passe solidário</h2>
+                <p>Novo cadastro</p>
+                <h2 id="registerTitle">Cadastro</h2>
               </div>
 
               <div class="field-grid">
@@ -100,8 +101,8 @@
                   <input name="childrenUnder16" type="number" min="0" max="50" value="0" required>
                 </label>
 
-                <label>
-                  <span>Contribuição calculada</span>
+                <label id="contributionLabel">
+                  <span>Contribuição estimada <small id="contributionHint" style="font-weight:400;color:var(--muted)">(10 € adulto · 5 € criança)</small></span>
                   <input name="contribution" type="number" min="0" step="0.01" value="10" readonly required>
                 </label>
 
@@ -114,28 +115,29 @@
                   </select>
                 </label>
 
-                <label>
-                  <span>Estado da contribuição</span>
-                  <select name="paymentStatus">
-                    <option value="Aguardando confirmação do organizador">Aguardando confirmação do organizador</option>
-                    <option value="Confirmado pelo organizador">Confirmado pelo organizador</option>
-                  </select>
-                </label>
-
                 <label class="span-2">
                   <span>Mensagem ou observação</span>
                   <textarea name="note" rows="4" placeholder="Ex.: Vou levar bebida, arroz, sumo..."></textarea>
                 </label>
               </div>
 
-              <button class="primary-action" type="submit">Gerar passe digital</button>
+              <button class="primary-action" type="submit">Enviar cadastro</button>
               <p class="form-status" id="formStatus" role="status" aria-live="polite"></p>
             </form>
 
-            <aside class="panel event-panel" aria-label="Resumo solidário">
+            <aside class="panel event-panel" aria-label="Resumo solidário" data-admin-only hidden>
               <div class="section-title">
                 <p>Resumo local</p>
                 <h2>Movimento do evento</h2>
+              </div>
+
+              <div class="pricing-config">
+                <strong>Preços por pessoa</strong>
+                <div class="pricing-row">
+                  <label><span>Adulto (€)</span><input id="adultPriceInput" type="number" min="0" step="0.5" value="10"></label>
+                  <label><span>Criança ≤16 (€)</span><input id="childPriceInput" type="number" min="0" step="0.5" value="5"></label>
+                  <button type="button" class="secondary-action compact-action" id="savePricingBtn">Guardar</button>
+                </div>
               </div>
 
               <dl class="metric-list">
@@ -170,9 +172,9 @@
         </section>
 
         <section class="view" id="pass" aria-labelledby="passTitle">
-          <div class="pass-layout">
+          <div class="pass-layout" id="passLayout">
             <div class="empty-state" id="emptyPass">
-              <p>O último passe criado aparece aqui.</p>
+              <p>O QR de entrada so aparece depois da confirmacao do organizador.</p>
             </div>
 
             <article class="pass-card" id="passCard" hidden>
@@ -185,7 +187,7 @@
               </div>
 
               <div class="pass-body"> 
-                <div id="passSeal" class="pass-qrcode" aria-label="QR code do passe"></div> 
+                <div id="passSeal" class="pass-qrcode" aria-label="QR code do passe"></div>
 
                 <div class="pass-details">
                   <span>Participante</span>
@@ -211,6 +213,55 @@
                 </div>
               </div>
             </article>
+          </div>
+
+          <section class="confirmed-passes-section">
+            <div class="confirmed-passes-header">
+              <h3>Participantes confirmados</h3>
+              <span id="confirmedCount" class="status-chip is-valid">0</span>
+            </div>
+            <div id="confirmedPassesList" class="confirmed-passes-grid"></div>
+            <p class="empty-state confirmed-empty" id="confirmedEmpty">Nenhum participante confirmado ainda.</p>
+          </section>
+        </section>
+
+        <section class="view" id="scanner" aria-labelledby="scannerTitle">
+          <div class="scanner-grid">
+            <div class="panel scanner-panel">
+              <div class="section-title">
+                <p>Validação no evento</p>
+                <h2 id="scannerTitle">Scanner de QR</h2>
+              </div>
+              <div class="scanner-container">
+                <video id="scannerVideo" class="scanner-video" playsinline autoplay muted></video>
+                <canvas id="scannerCanvas" hidden></canvas>
+              </div>
+              <div class="button-row" style="margin-top:16px">
+                <button type="button" class="primary-action compact-action" id="startScannerBtn">Iniciar câmara</button>
+                <button type="button" class="secondary-action" id="stopScannerBtn" disabled>Parar</button>
+              </div>
+              <p class="form-status" id="scannerStatus" role="status" aria-live="polite"></p>
+            </div>
+
+            <aside class="panel" id="scannerResultPanel" hidden>
+              <div class="scanner-badge" id="scannerBadge">A aguardar scan</div>
+              <div class="section-title">
+                <p>Participante</p>
+                <h2 id="scannerName">-</h2>
+              </div>
+              <dl class="detail-list">
+                <div><dt>Código</dt><dd class="code-text" id="scannerCode">-</dd></div>
+                <div><dt>Atividade</dt><dd id="scannerActivity">-</dd></div>
+                <div><dt>Pessoas</dt><dd id="scannerGuests">-</dd></div>
+                <div><dt>Contribuição</dt><dd id="scannerContribution">-</dd></div>
+                <div><dt>Validade</dt><dd id="scannerValidity">-</dd></div>
+                <div><dt>Entrada</dt><dd id="scannerEntry">-</dd></div>
+              </dl>
+            </aside>
+
+            <div class="empty-state" id="scannerEmptyResult">
+              <p>Aponta a câmara para um QR code de passe. O resultado aparece aqui.</p>
+            </div>
           </div>
         </section>
 
@@ -357,6 +408,7 @@
                     <th>Entrada</th>
                     <th>Contacto</th>
                     <th>Ações</th>
+                    <th>Excluir</th>
                   </tr>
                 </thead>
                 <tbody id="participantsBody"></tbody>
@@ -392,6 +444,8 @@
 
     <!-- QR Code Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- QR Scanner -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="assets/js/app.js"></script>
   </body>
 </html>
