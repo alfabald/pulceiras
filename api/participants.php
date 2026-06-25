@@ -7,7 +7,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     json_response(['error' => 'Método não permitido.'], 405);
 }
 
-require_admin();
+require_permission('viewParticipants');
 
 $participants = read_participants();
 $guests = 0;
@@ -42,4 +42,5 @@ json_response([
         'pledged' => round($pledged, 2),
         'received' => round($received, 2),
     ],
+    'audit' => read_audit_logs(120),
 ]);

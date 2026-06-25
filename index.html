@@ -24,7 +24,6 @@
           <button class="tab is-active" type="button" data-view="register">Inscrição</button>
           <button class="tab" type="button" data-view="pass">Confirmados</button>
           <button class="tab" type="button" data-view="checkin" data-admin-only hidden>Entrada</button>
-          <button class="tab" type="button" data-view="scanner" data-admin-only hidden>Scanner QR</button>
           <button class="tab" type="button" data-view="participants" data-admin-only hidden>Participantes</button>
           <button class="tab" type="button" data-view="transparency" data-admin-only hidden>Transparência</button>
         </nav>
@@ -82,11 +81,6 @@
                 </label>
 
                 <label>
-                  <span>Confirmar email</span>
-                  <input name="confirmEmail" type="email" autocomplete="email" placeholder="repete o email">
-                </label>
-
-                <label>
                   <span>Cidade ou bairro</span>
                   <input name="city" type="text" autocomplete="address-level2" placeholder="Ex.: Hamburg">
                 </label>
@@ -104,15 +98,6 @@
                 <label id="contributionLabel">
                   <span>Contribuição estimada <small id="contributionHint" style="font-weight:400;color:var(--muted)">(10 € adulto · 5 € criança)</small></span>
                   <input name="contribution" type="number" min="0" step="0.01" value="10" readonly required>
-                </label>
-
-                <label>
-                  <span>Acordo com comissão organizadora</span>
-                  <select name="committeeAgreement">
-                    <option value="Padrão da comissão">Padrão da comissão</option>
-                    <option value="Acordo social (a validar)">Acordo social (a validar)</option>
-                    <option value="Isenção parcial (a validar)">Isenção parcial (a validar)</option>
-                  </select>
                 </label>
 
                 <label class="span-2">
@@ -137,6 +122,22 @@
                   <label><span>Adulto (€)</span><input id="adultPriceInput" type="number" min="0" step="0.5" value="10"></label>
                   <label><span>Criança ≤16 (€)</span><input id="childPriceInput" type="number" min="0" step="0.5" value="5"></label>
                   <button type="button" class="secondary-action compact-action" id="savePricingBtn">Guardar</button>
+                </div>
+              </div>
+
+              <div class="pricing-config">
+                <strong>Configuração do evento</strong>
+                <div class="pricing-row">
+                  <label><span>Nome</span><input id="eventNameInput" type="text" placeholder="Nome do evento"></label>
+                  <label><span>Data</span><input id="eventDateInput" type="date"></label>
+                </div>
+                <div class="pricing-row">
+                  <label><span>Local</span><input id="eventLocationInput" type="text" placeholder="Ex.: Hamburg"></label>
+                  <label><span>Atividades (separadas por vírgula)</span><input id="activityCatalogInput" type="text" placeholder="Ex.: Workshop, Torneio"></label>
+                </div>
+                <div class="pricing-row">
+                  <label><span>Equipes (separadas por vírgula)</span><input id="teamsInput" type="text" placeholder="Ex.: Entrada, Financeiro"></label>
+                  <button type="button" class="secondary-action compact-action" id="saveEventConfigBtn">Guardar evento</button>
                 </div>
               </div>
 
@@ -225,46 +226,6 @@
           </section>
         </section>
 
-        <section class="view" id="scanner" aria-labelledby="scannerTitle">
-          <div class="scanner-grid">
-            <div class="panel scanner-panel">
-              <div class="section-title">
-                <p>Validação no evento</p>
-                <h2 id="scannerTitle">Scanner de QR</h2>
-              </div>
-              <div class="scanner-container">
-                <video id="scannerVideo" class="scanner-video" playsinline autoplay muted></video>
-                <canvas id="scannerCanvas" hidden></canvas>
-              </div>
-              <div class="button-row" style="margin-top:16px">
-                <button type="button" class="primary-action compact-action" id="startScannerBtn">Iniciar câmara</button>
-                <button type="button" class="secondary-action" id="stopScannerBtn" disabled>Parar</button>
-              </div>
-              <p class="form-status" id="scannerStatus" role="status" aria-live="polite"></p>
-            </div>
-
-            <aside class="panel" id="scannerResultPanel" hidden>
-              <div class="scanner-badge" id="scannerBadge">A aguardar scan</div>
-              <div class="section-title">
-                <p>Participante</p>
-                <h2 id="scannerName">-</h2>
-              </div>
-              <dl class="detail-list">
-                <div><dt>Código</dt><dd class="code-text" id="scannerCode">-</dd></div>
-                <div><dt>Atividade</dt><dd id="scannerActivity">-</dd></div>
-                <div><dt>Pessoas</dt><dd id="scannerGuests">-</dd></div>
-                <div><dt>Contribuição</dt><dd id="scannerContribution">-</dd></div>
-                <div><dt>Validade</dt><dd id="scannerValidity">-</dd></div>
-                <div><dt>Entrada</dt><dd id="scannerEntry">-</dd></div>
-              </dl>
-            </aside>
-
-            <div class="empty-state" id="scannerEmptyResult">
-              <p>Aponta a câmara para um QR code de passe. O resultado aparece aqui.</p>
-            </div>
-          </div>
-        </section>
-
         <section class="view" id="transparency" aria-labelledby="transparencyTitle">
           <div class="panel transparency-panel">
             <header>
@@ -322,8 +283,35 @@
                 <input id="checkinQuery" type="search" autocomplete="off" placeholder="Ex.: GABU-2026-ABC123">
               </label>
 
+              <label>
+                <span>Filtrar por atividade</span>
+                <select id="checkinActivityFilter">
+                  <option value="">Todas as atividades</option>
+                </select>
+              </label>
+
               <button class="primary-action" type="submit">Procurar participante</button>
               <p class="form-status" id="checkinStatus" role="status" aria-live="polite"></p>
+
+              <div class="inline-scanner">
+                <strong>Ou ler QR code do passe</strong>
+                <div class="scanner-container">
+                  <video id="scannerVideo" class="scanner-video" playsinline autoplay muted></video>
+                  <canvas id="scannerCanvas" hidden></canvas>
+                </div>
+                <div class="button-row" style="margin-top:12px">
+                  <button type="button" class="primary-action compact-action" id="startScannerBtn">Iniciar câmara</button>
+                  <button type="button" class="secondary-action" id="stopScannerBtn" disabled>Parar</button>
+                </div>
+                <p class="form-status" id="scannerStatus" role="status" aria-live="polite"></p>
+              </div>
+
+              <div class="checkin-dashboard" id="checkinDashboard">
+                <div><span>Presentes</span><strong id="checkinPresentCount">0</strong></div>
+                <div><span>No-show</span><strong id="checkinNoShowCount">0</strong></div>
+                <div><span>Última hora</span><strong id="checkinLastHourCount">0</strong></div>
+                <div><span>Taxa presença</span><strong id="checkinRate">0%</strong></div>
+              </div>
 
               <div class="match-list" id="checkinMatches" hidden>
                 <strong>Resultados encontrados</strong>
@@ -390,6 +378,7 @@
               <div class="tool-row">
                 <input id="participantSearch" type="search" placeholder="Procurar nome, telefone ou código">
                 <button type="button" class="secondary-action" id="exportCsv">Exportar CSV</button>
+                <button type="button" class="secondary-action" id="exportAdvancedCsv">Exportar por atividade</button>
                 <button type="button" class="danger-action" id="clearLocal">Limpar local</button>
               </div>
             </div>
@@ -416,6 +405,13 @@
             </div>
 
             <p class="empty-table" id="emptyTable">Ainda não há participantes registados.</p>
+
+            <section class="audit-section">
+              <h3>Histórico de auditoria</h3>
+              <div id="auditList" class="audit-list">
+                <p class="empty-state">Sem ações registradas ainda.</p>
+              </div>
+            </section>
           </div>
         </section>
       </main>

@@ -9,17 +9,34 @@ const API_DELETE = "api/delete.php";
 const API_LOGIN = "api/login.php";
 const API_LOGOUT = "api/logout.php";
 const API_SESSION = "api/session.php";
+const API_EVENT_CONFIG = "api/event-config.php";
 const LOCAL_ADMIN_PIN = "gabu2026";
+const CHECKIN_QUEUE_KEY = "gabuCheckinQueueV1";
+const SCAN_COOLDOWN_MS = 2000;
 
 const state = {
   participants: [],
   currentPass: null,
   currentCheckin: null,
   isAdmin: false,
+  role: "none",
+  permissions: [],
   passPollingTimer: null,
   scannerStream: null,
   scannerAnimFrame: null,
+  scanLockMap: {},
+  checkinSyncBusy: false,
   pricing: { adultPrice: 10, childPrice: 5 },
+  eventConfig: {
+    eventName: "Passe de Atividades Solidárias",
+    eventDate: "",
+    eventLocation: "",
+    adultPrice: 10,
+    childPrice: 5,
+    activityCatalog: [],
+    teams: [],
+  },
+  audit: [],
 };
 
 const elements = {
@@ -27,6 +44,7 @@ const elements = {
   adminOnlyTabs: document.querySelectorAll("[data-admin-only]"),
   organizerTabs: document.querySelectorAll("[data-organizer-tab]"),
   registerWorkGrid: document.querySelector("#register .work-grid"),
+  brandTitle: document.querySelector(".brand h1"),
   views: document.querySelectorAll(".view"),
   form: document.querySelector("#signupForm"),
   formStatus: document.querySelector("#formStatus"),
@@ -50,27 +68,25 @@ const elements = {
   scannerVideo: document.querySelector("#scannerVideo"),
   scannerCanvas: document.querySelector("#scannerCanvas"),
   scannerStatus: document.querySelector("#scannerStatus"),
-  scannerResultPanel: document.querySelector("#scannerResultPanel"),
-  scannerBadge: document.querySelector("#scannerBadge"),
-  scannerName: document.querySelector("#scannerName"),
-  scannerCode: document.querySelector("#scannerCode"),
-  scannerActivity: document.querySelector("#scannerActivity"),
-  scannerGuests: document.querySelector("#scannerGuests"),
-  scannerContribution: document.querySelector("#scannerContribution"),
-  scannerValidity: document.querySelector("#scannerValidity"),
-  scannerEntry: document.querySelector("#scannerEntry"),
-  scannerEmptyResult: document.querySelector("#scannerEmptyResult"),
   adultPriceInput: document.querySelector("#adultPriceInput"),
   childPriceInput: document.querySelector("#childPriceInput"),
   savePricingBtn: document.querySelector("#savePricingBtn"),
+  eventNameInput: document.querySelector("#eventNameInput"),
+  eventDateInput: document.querySelector("#eventDateInput"),
+  eventLocationInput: document.querySelector("#eventLocationInput"),
+  activityCatalogInput: document.querySelector("#activityCatalogInput"),
+  teamsInput: document.querySelector("#teamsInput"),
+  saveEventConfigBtn: document.querySelector("#saveEventConfigBtn"),
   contributionHint: document.querySelector("#contributionHint"),
   participantsBody: document.querySelector("#participantsBody"),
   emptyTable: document.querySelector("#emptyTable"),
   participantSearch: document.querySelector("#participantSearch"),
   exportCsv: document.querySelector("#exportCsv"),
+  exportAdvancedCsv: document.querySelector("#exportAdvancedCsv"),
   clearLocal: document.querySelector("#clearLocal"),
   checkinForm: document.querySelector("#checkinForm"),
   checkinQuery: document.querySelector("#checkinQuery"),
+  checkinActivityFilter: document.querySelector("#checkinActivityFilter"),
   checkinStatus: document.querySelector("#checkinStatus"),
   checkinResult: document.querySelector("#checkinResult"),
   checkinEmptyResult: document.querySelector("#checkinEmptyResult"),
@@ -84,9 +100,14 @@ const elements = {
   checkinPaymentStatus: document.querySelector("#checkinPaymentStatus"),
   checkinContact: document.querySelector("#checkinContact"),
   checkinTime: document.querySelector("#checkinTime"),
+  checkinPresentCount: document.querySelector("#checkinPresentCount"),
+  checkinNoShowCount: document.querySelector("#checkinNoShowCount"),
+  checkinLastHourCount: document.querySelector("#checkinLastHourCount"),
+  checkinRate: document.querySelector("#checkinRate"),
   confirmCheckin: document.querySelector("#confirmCheckin"),
   undoCheckin: document.querySelector("#undoCheckin"),
   openCheckinPass: document.querySelector("#openCheckinPass"),
+  auditList: document.querySelector("#auditList"),
   adminStatusLabel: document.querySelector("#adminStatusLabel"),
   adminLoginButton: document.querySelector("#adminLoginButton"),
   adminLogoutButton: document.querySelector("#adminLogoutButton"),
@@ -118,12 +139,259 @@ const dateFormatter = new Intl.DateTimeFormat("pt-PT", {
   timeStyle: "short",
 });
 
+let scanAudioContext = null;
+
+function ensureScanAudioContext() {
+  if (scanAudioContext) {
+    return scanAudioContext;
+  }
+
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) {
+    return null;
+  }
+
+  scanAudioContext = new Ctx();
+  return scanAudioContext;
+}
+
+function playTone(frequency, durationMs, options = {}) {
+  const ctx = ensureScanAudioContext();
+  if (!ctx) {
+    return;
+  }
+
+  const {
+    type = "sine",
+    gainValue = 0.04,
+    delayMs = 0,
+  } = options;
+
+  const startAt = ctx.currentTime + (delayMs / 1000);
+  const stopAt = startAt + (durationMs / 1000);
+
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  oscillator.type = type;
+  oscillator.frequency.value = frequency;
+
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.linearRampToValueAtTime(gainValue, startAt + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start(startAt);
+  oscillator.stop(stopAt + 0.01);
+}
+
+function playScanFeedback(type) {
+  const ctx = ensureScanAudioContext();
+  if (!ctx) {
+    return;
+  }
+
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+
+  if (type === "success") {
+    playTone(880, 90, { type: "triangle", gainValue: 0.05 });
+    playTone(1175, 110, { type: "triangle", gainValue: 0.05, delayMs: 100 });
+    return;
+  }
+
+  if (type === "warning") {
+    playTone(420, 140, { type: "sawtooth", gainValue: 0.04 });
+    return;
+  }
+
+  if (type === "info") {
+    playTone(640, 100, { type: "sine", gainValue: 0.035 });
+    return;
+  }
+
+  playTone(230, 180, { type: "square", gainValue: 0.05 });
+}
+
 function safeTrim(value) {
   return String(value || "").trim();
 }
 
 function isFileMode() {
   return window.location.protocol === "file:";
+}
+
+function hasPermission(permission) {
+  return state.isAdmin && Array.isArray(state.permissions) && state.permissions.includes(permission);
+}
+
+function parseCommaList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => safeTrim(item))
+    .filter(Boolean);
+}
+
+function getCheckinQueue() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CHECKIN_QUEUE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setCheckinQueue(items) {
+  localStorage.setItem(CHECKIN_QUEUE_KEY, JSON.stringify(items));
+}
+
+function queueOfflineCheckin(code, checkedInAt) {
+  const queue = getCheckinQueue();
+  const rest = queue.filter((item) => item.code !== code);
+  rest.push({ code, checkedInAt, queuedAt: new Date().toISOString() });
+  setCheckinQueue(rest);
+}
+
+async function syncCheckinQueue() {
+  if (state.checkinSyncBusy || !navigator.onLine || isFileMode() || !hasPermission("confirmEntry")) {
+    return;
+  }
+
+  const queue = getCheckinQueue();
+  if (queue.length === 0) {
+    return;
+  }
+
+  state.checkinSyncBusy = true;
+  const remaining = [];
+
+  for (const item of queue) {
+    try {
+      const participant = state.participants.find((p) => p.code === item.code) || { code: item.code };
+      const updated = await saveCheckin(participant, item.checkedInAt, { allowOfflineQueue: false });
+      if (updated) {
+        updateParticipant(updated);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+
+  setCheckinQueue(remaining);
+  state.checkinSyncBusy = false;
+  renderAll();
+}
+
+function isScanLocked(code) {
+  const now = Date.now();
+  const nextAllowedAt = state.scanLockMap[code] || 0;
+  if (nextAllowedAt > now) {
+    return true;
+  }
+
+  state.scanLockMap[code] = now + SCAN_COOLDOWN_MS;
+  return false;
+}
+
+async function loadEventConfig() {
+  if (isFileMode()) {
+    try {
+      const raw = JSON.parse(localStorage.getItem("gabuEventConfigV1") || "{}");
+      state.eventConfig = { ...state.eventConfig, ...raw };
+      state.pricing.adultPrice = Number(state.eventConfig.adultPrice || state.pricing.adultPrice);
+      state.pricing.childPrice = Number(state.eventConfig.childPrice || state.pricing.childPrice);
+      updateContributionHint();
+      renderEventConfigInputs();
+      renderCheckinActivityFilter();
+    } catch {}
+    return;
+  }
+
+  try {
+    const response = await fetch(API_EVENT_CONFIG, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      return;
+    }
+
+    const data = await response.json();
+    if (data?.config) {
+      state.eventConfig = {
+        ...state.eventConfig,
+        ...data.config,
+      };
+      state.pricing.adultPrice = Number(state.eventConfig.adultPrice || state.pricing.adultPrice);
+      state.pricing.childPrice = Number(state.eventConfig.childPrice || state.pricing.childPrice);
+      updateContributionHint();
+      renderEventConfigInputs();
+      renderCheckinActivityFilter();
+    }
+  } catch {
+    // keep local defaults
+  }
+}
+
+async function saveEventConfig() {
+  if (!hasPermission("manageSettings") && !isFileMode()) {
+    return;
+  }
+
+  const payload = {
+    eventName: safeTrim(elements.eventNameInput?.value),
+    eventDate: safeTrim(elements.eventDateInput?.value),
+    eventLocation: safeTrim(elements.eventLocationInput?.value),
+    adultPrice: Number.parseFloat(elements.adultPriceInput?.value || "0") || 0,
+    childPrice: Number.parseFloat(elements.childPriceInput?.value || "0") || 0,
+    activityCatalog: parseCommaList(elements.activityCatalogInput?.value),
+    teams: parseCommaList(elements.teamsInput?.value),
+  };
+
+  if (isFileMode()) {
+    state.eventConfig = { ...state.eventConfig, ...payload, updatedAt: new Date().toISOString() };
+    localStorage.setItem("gabuEventConfigV1", JSON.stringify(state.eventConfig));
+    state.pricing.adultPrice = Number(state.eventConfig.adultPrice || state.pricing.adultPrice);
+    state.pricing.childPrice = Number(state.eventConfig.childPrice || state.pricing.childPrice);
+    savePricing();
+    updateContributionHint();
+    renderEventConfigInputs();
+    renderCheckinActivityFilter();
+    return;
+  }
+
+  const response = await fetch(API_EVENT_CONFIG, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Não foi possível guardar a configuração do evento.");
+  }
+
+  const data = await response.json();
+  if (data?.config) {
+    state.eventConfig = { ...state.eventConfig, ...data.config };
+    state.pricing.adultPrice = Number(state.eventConfig.adultPrice || state.pricing.adultPrice);
+    state.pricing.childPrice = Number(state.eventConfig.childPrice || state.pricing.childPrice);
+    savePricing();
+    updateContributionHint();
+    renderEventConfigInputs();
+    renderCheckinActivityFilter();
+  }
+}
+
+function renderEventConfigInputs() {
+  if (elements.brandTitle && state.eventConfig.eventName) {
+    elements.brandTitle.textContent = state.eventConfig.eventName;
+  }
+  if (elements.eventNameInput) elements.eventNameInput.value = state.eventConfig.eventName || "";
+  if (elements.eventDateInput) elements.eventDateInput.value = state.eventConfig.eventDate || "";
+  if (elements.eventLocationInput) elements.eventLocationInput.value = state.eventConfig.eventLocation || "";
+  if (elements.activityCatalogInput) elements.activityCatalogInput.value = (state.eventConfig.activityCatalog || []).join(", ");
+  if (elements.teamsInput) elements.teamsInput.value = (state.eventConfig.teams || []).join(", ");
 }
 
 function normalizeSearch(value) {
@@ -166,10 +434,11 @@ function normalizeParticipant(participant) {
     agreedAmount,
     amountConfirmed,
     amountConfirmedAt: safeTrim(participant.amountConfirmedAt),
-    committeeAgreement: safeTrim(participant.committeeAgreement) || "Padrão da comissão",
     paymentStatus:
       safeTrim(participant.paymentStatus) ||
       (amountConfirmed ? "Confirmado pelo organizador" : "Aguardando confirmação do organizador"),
+    paymentProofImage: safeTrim(participant.paymentProofImage),
+    paymentProofNote: safeTrim(participant.paymentProofNote),
     note: safeTrim(participant.note),
     checkedInAt: participant.checkedInAt || "",
     createdAt: participant.createdAt || new Date().toISOString(),
@@ -246,6 +515,7 @@ async function loadServerParticipants() {
     const data = await response.json();
     if (Array.isArray(data.participants)) {
       mergeParticipants(data.participants);
+      state.audit = Array.isArray(data.audit) ? data.audit : [];
       renderAll();
     }
   } catch {
@@ -258,7 +528,6 @@ async function saveParticipant(participant) {
     try {
       const payload = {
         ...participant,
-        confirmEmail: participant.email,
       };
 
       const response = await fetch(API_REGISTER, {
@@ -284,11 +553,17 @@ async function saveParticipant(participant) {
   return participant;
 }
 
-async function saveCheckin(participant, checkedInAt) {
+async function saveCheckin(participant, checkedInAt, options = {}) {
+  const { allowOfflineQueue = true } = options;
   const updatedParticipant = normalizeParticipant({
     ...participant,
     checkedInAt,
   });
+
+  if (!navigator.onLine && allowOfflineQueue) {
+    queueOfflineCheckin(participant.code, checkedInAt);
+    return updatedParticipant;
+  }
 
   if (!isFileMode()) {
     try {
@@ -309,6 +584,10 @@ async function saveCheckin(participant, checkedInAt) {
         throw new Error("Precisas entrar como organizador.");
       }
 
+      if (response.status === 403) {
+        throw new Error("O teu perfil não tem permissão para confirmar entrada.");
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || "Não foi possível confirmar a entrada.");
@@ -319,6 +598,10 @@ async function saveCheckin(participant, checkedInAt) {
         return normalizeParticipant(data.participant);
       }
     } catch {
+      if (allowOfflineQueue) {
+        queueOfflineCheckin(participant.code, checkedInAt);
+        return updatedParticipant;
+      }
       throw new Error("Não foi possível confirmar a entrada.");
     }
   }
@@ -326,7 +609,7 @@ async function saveCheckin(participant, checkedInAt) {
   return updatedParticipant;
 }
 
-async function confirmPayment(participant, agreedAmount) {
+async function confirmPayment(participant, agreedAmount, paymentProofImage = "", paymentProofNote = "") {
   const updatedParticipant = normalizeParticipant({
     ...participant,
     agreedAmount,
@@ -334,6 +617,8 @@ async function confirmPayment(participant, agreedAmount) {
     amountConfirmed: true,
     amountConfirmedAt: new Date().toISOString(),
     paymentStatus: "Confirmado pelo organizador",
+    paymentProofImage,
+    paymentProofNote,
   });
 
   if (!isFileMode()) {
@@ -346,12 +631,18 @@ async function confirmPayment(participant, agreedAmount) {
       body: JSON.stringify({
         code: participant.code,
         agreedAmount,
+        paymentProofImage,
+        paymentProofNote,
       }),
     });
 
     if (response.status === 401) {
       setAdminState(false, { clearData: true });
       throw new Error("Precisas entrar como organizador.");
+    }
+
+    if (response.status === 403) {
+      throw new Error("O teu perfil não tem permissão para confirmar montante.");
     }
 
     if (!response.ok) {
@@ -425,7 +716,7 @@ function startPassWatcher(participant) {
 }
 
 function isAdminView(viewId) {
-  return viewId === "checkin" || viewId === "participants" || viewId === "scanner" || viewId === "transparency";
+  return viewId === "checkin" || viewId === "participants" || viewId === "transparency";
 }
 
 function activeViewId() {
@@ -433,10 +724,60 @@ function activeViewId() {
   return activeView ? activeView.id : "register";
 }
 
+function canOpenView(viewId) {
+  if (!isAdminView(viewId)) {
+    return true;
+  }
+
+  if (!state.isAdmin) {
+    return false;
+  }
+
+  if (viewId === "checkin") {
+    return hasPermission("confirmEntry");
+  }
+  if (viewId === "participants") {
+    return hasPermission("viewParticipants");
+  }
+  if (viewId === "transparency") {
+    return hasPermission("viewParticipants") || hasPermission("manageSettings");
+  }
+
+  return true;
+}
+
 function setAdminState(isAdmin, options = {}) {
   state.isAdmin = isAdmin;
+  state.role = isAdmin ? (options.role || state.role || "admin") : "none";
+  state.permissions = isAdmin ? (options.permissions || state.permissions || []) : [];
+
+  const canEntry = hasPermission("confirmEntry");
+  const canViewParticipants = hasPermission("viewParticipants");
+  const canViewTransparency = hasPermission("viewParticipants") || hasPermission("manageSettings");
+
   elements.adminOnlyTabs.forEach((tab) => {
-    tab.hidden = !isAdmin;
+    const view = tab.dataset.view;
+    if (!isAdmin) {
+      tab.hidden = true;
+      return;
+    }
+
+    if (view === "checkin") {
+      tab.hidden = !canEntry;
+      return;
+    }
+
+    if (view === "participants") {
+      tab.hidden = !canViewParticipants;
+      return;
+    }
+
+    if (view === "transparency") {
+      tab.hidden = !canViewTransparency;
+      return;
+    }
+
+    tab.hidden = false;
   });
   elements.organizerTabs.forEach((tab) => {
     tab.hidden = !isAdmin;
@@ -444,17 +785,18 @@ function setAdminState(isAdmin, options = {}) {
   if (elements.registerWorkGrid) {
     elements.registerWorkGrid.classList.toggle("is-single", !isAdmin);
   }
-  elements.adminStatusLabel.textContent = isAdmin ? "Organizador" : "Público";
+  elements.adminStatusLabel.textContent = isAdmin ? `Organizador (${state.role})` : "Público";
   elements.adminStatusLabel.classList.toggle("is-active", isAdmin);
   elements.adminLoginButton.hidden = isAdmin;
   elements.adminLogoutButton.hidden = !isAdmin;
 
-  if (!isAdmin && isAdminView(activeViewId())) {
+  if (!canOpenView(activeViewId())) {
     showView("register");
   }
 
   if (!isAdmin && options.clearData) {
     state.participants = [];
+    state.audit = [];
     state.currentCheckin = null;
     localStorage.removeItem(STORAGE_KEY);
     elements.checkinResult.hidden = true;
@@ -487,7 +829,11 @@ function closeAdminDialog() {
 
 async function checkAdminSession() {
   if (isFileMode()) {
-    setAdminState(sessionStorage.getItem("gabuAdmin") === "true");
+    const isAdmin = sessionStorage.getItem("gabuAdmin") === "true";
+    setAdminState(isAdmin, {
+      role: isAdmin ? "admin" : "none",
+      permissions: isAdmin ? ["viewParticipants", "confirmEntry", "confirmPayments", "deleteParticipants", "manageSettings", "viewAudit"] : [],
+    });
     return;
   }
 
@@ -499,7 +845,10 @@ async function checkAdminSession() {
     }
 
     const data = await response.json();
-    setAdminState(Boolean(data.isAdmin));
+    setAdminState(Boolean(data.isAdmin), {
+      role: data.role || "none",
+      permissions: Array.isArray(data.permissions) ? data.permissions : [],
+    });
   } catch {
     setAdminState(false);
   }
@@ -510,6 +859,10 @@ async function loginAdmin(pin) {
     const ok = pin === LOCAL_ADMIN_PIN;
     if (ok) {
       sessionStorage.setItem("gabuAdmin", "true");
+      setAdminState(true, {
+        role: "admin",
+        permissions: ["viewParticipants", "confirmEntry", "confirmPayments", "deleteParticipants", "manageSettings", "viewAudit"],
+      });
     }
     return ok;
   }
@@ -528,6 +881,12 @@ async function loginAdmin(pin) {
   }
 
   const data = await response.json();
+  if (Boolean(data.isAdmin)) {
+    setAdminState(true, {
+      role: data.role || "admin",
+      permissions: Array.isArray(data.permissions) ? data.permissions : [],
+    });
+  }
   return Boolean(data.isAdmin);
 }
 
@@ -577,7 +936,6 @@ function participantText(participant) {
     `Nome: ${participant.fullName}`,
     `Código: ${participant.code}`,
     `Pessoas: ${participant.guests} (Adultos: ${participant.adults}, Crianças: ${participant.childrenUnder16})`,
-    `Acordo: ${participant.committeeAgreement}`,
     `Montante acordado: ${euroFormatter.format(participant.agreedAmount || participant.contribution)}`,
     `Validade: ${passStatusText(participant)}`,
     `Link: ${getPassUrl(participant)}`,
@@ -610,7 +968,7 @@ async function openPassFromQuery() {
 }
 
 function showView(viewId) {
-  if (isAdminView(viewId) && !state.isAdmin) {
+  if (!canOpenView(viewId)) {
     openAdminDialog();
     return;
   }
@@ -630,7 +988,7 @@ function showView(viewId) {
   if (viewId === "pass") {
     renderConfirmedPasses();
   }
-  if (viewId !== "scanner") {
+  if (viewId !== "checkin") {
     stopScanner();
   }
 }
@@ -658,6 +1016,8 @@ function renderMetrics() {
 
 function renderParticipants() {
   const term = safeTrim(elements.participantSearch.value).toLowerCase();
+  const canConfirmPayments = hasPermission("confirmPayments");
+  const canDeleteParticipants = hasPermission("deleteParticipants");
   const participants = state.participants.filter((participant) => {
     const haystack = [
       participant.code,
@@ -666,7 +1026,6 @@ function renderParticipants() {
       participant.phone,
       participant.email,
       participant.city,
-      participant.committeeAgreement,
       participant.paymentStatus,
     ].join(" ").toLowerCase();
     return haystack.includes(term);
@@ -679,6 +1038,19 @@ function renderParticipants() {
     const valid = participantIsValid(participant);
     const statusChip = `<span class="status-chip ${valid ? "is-valid" : "is-pending"}">${valid ? "Válido" : "Pendente"}</span>`;
     const agreedAmount = participant.agreedAmount || participant.contribution;
+    const actionCell = !canConfirmPayments
+      ? "<small>Sem permissão</small>"
+      : (valid ? "<small>Confirmado</small>" : `
+        <div class="action-inline">
+          <input class="confirm-amount" type="number" min="0" step="0.01" value="${agreedAmount}" data-amount-for="${escapeHtml(participant.code)}">
+          <input class="confirm-proof-note" type="text" maxlength="120" placeholder="Comprovante (opcional)" data-proof-note-for="${escapeHtml(participant.code)}">
+          <input class="confirm-proof-file" type="file" accept="image/*" data-proof-file-for="${escapeHtml(participant.code)}">
+          <button type="button" class="secondary-action" data-confirm-code="${escapeHtml(participant.code)}">Confirmar</button>
+        </div>`);
+
+    const deleteCell = canDeleteParticipants
+      ? `<button type="button" class="danger-action" data-delete-code="${escapeHtml(participant.code)}">Excluir</button>`
+      : "<small>Sem permissão</small>";
 
     row.innerHTML = `
       <td><strong class="code-text">${escapeHtml(participant.code)}</strong></td>
@@ -687,17 +1059,11 @@ function renderParticipants() {
       <td>${participant.guests}<br><small>${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)</small></td>
       <td>${escapeHtml(euroFormatter.format(agreedAmount))}</td>
       <td>${statusChip}</td>
-      <td>${escapeHtml(participant.paymentStatus)}<br><small>${escapeHtml(participant.committeeAgreement || "-")}</small></td>
+      <td>${escapeHtml(participant.paymentStatus)}</td>
       <td>${renderEntryStatus(participant)}</td>
       <td>${escapeHtml(participant.phone)}${participant.email ? `<br><small>${escapeHtml(participant.email)}</small>` : ""}</td>
-      <td>
-        ${valid ? "<small>Confirmado</small>" : `
-        <div class="action-inline">
-          <input class="confirm-amount" type="number" min="0" step="0.01" value="${agreedAmount}" data-amount-for="${escapeHtml(participant.code)}">
-          <button type="button" class="secondary-action" data-confirm-code="${escapeHtml(participant.code)}">Confirmar</button>
-        </div>`}
-      </td>
-      <td><button type="button" class="danger-action" data-delete-code="${escapeHtml(participant.code)}">Excluir</button></td>
+      <td>${actionCell}</td>
+      <td>${deleteCell}</td>
     `;
     elements.participantsBody.appendChild(row);
   });
@@ -815,7 +1181,7 @@ function renderPass(participant) {
   elements.passStatus.textContent = valid ? "Válido" : "Pendente";
   elements.passStatus.classList.toggle("is-valid", valid);
   elements.passStatus.classList.toggle("is-pending", !valid);
-  elements.passMeta.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)) - ${participant.paymentStatus} - ${participant.committeeAgreement}`;
+  elements.passMeta.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s)) - ${participant.paymentStatus}`;
   elements.copyPass.disabled = !valid;
   elements.sharePass.disabled = !valid;
   elements.printPass.disabled = !valid;
@@ -831,6 +1197,9 @@ function renderPass(participant) {
 function renderAll() {
   renderMetrics();
   renderParticipants();
+  renderAudit();
+  renderCheckinActivityFilter();
+  renderCheckinDashboard();
 
   if (state.currentCheckin) {
     const refreshedParticipant = state.participants.find((participant) => participant.code === state.currentCheckin.code);
@@ -839,6 +1208,72 @@ function renderAll() {
       renderCheckinResult();
     }
   }
+}
+
+function renderAudit() {
+  if (!elements.auditList) return;
+  if (!state.isAdmin || !hasPermission("viewAudit")) {
+    elements.auditList.innerHTML = '<p class="empty-state">Histórico visível apenas para administração.</p>';
+    return;
+  }
+
+  const logs = Array.isArray(state.audit) ? state.audit.slice(0, 50) : [];
+  if (logs.length === 0) {
+    elements.auditList.innerHTML = '<p class="empty-state">Sem ações registradas ainda.</p>';
+    return;
+  }
+
+  elements.auditList.innerHTML = "";
+  logs.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "audit-item";
+    const when = formatDateTime(item.timestamp || "");
+    const action = safeTrim(item.action || "-");
+    const target = safeTrim(item.targetCode || "-");
+    const role = safeTrim(item.actorRole || "-");
+    div.textContent = `${when} · ${action} · código ${target} · perfil ${role}`;
+    elements.auditList.appendChild(div);
+  });
+}
+
+function renderCheckinDashboard() {
+  if (!elements.checkinPresentCount) return;
+
+  const registrations = state.participants.length;
+  const checked = state.participants.filter((p) => Boolean(p.checkedInAt));
+  const present = checked.length;
+  const noShow = Math.max(0, registrations - present);
+  const lastHour = checked.filter((p) => {
+    const ts = new Date(p.checkedInAt || "").getTime();
+    if (!Number.isFinite(ts)) return false;
+    return Date.now() - ts <= 60 * 60 * 1000;
+  }).length;
+  const rate = registrations > 0 ? Math.round((present / registrations) * 100) : 0;
+
+  elements.checkinPresentCount.textContent = String(present);
+  elements.checkinNoShowCount.textContent = String(noShow);
+  elements.checkinLastHourCount.textContent = String(lastHour);
+  elements.checkinRate.textContent = `${rate}%`;
+}
+
+function renderCheckinActivityFilter() {
+  if (!elements.checkinActivityFilter) return;
+
+  const current = elements.checkinActivityFilter.value;
+  const catalog = new Set((state.eventConfig.activityCatalog || []).map((x) => safeTrim(x)).filter(Boolean));
+  state.participants.forEach((p) => catalog.add(safeTrim(p.activityName)));
+
+  const options = ["", ...[...catalog].sort((a, b) => a.localeCompare(b, "pt"))];
+  elements.checkinActivityFilter.innerHTML = "";
+  options.forEach((activity) => {
+    const option = document.createElement("option");
+    option.value = activity;
+    option.textContent = activity || "Todas as atividades";
+    elements.checkinActivityFilter.appendChild(option);
+  });
+
+  const restored = options.includes(current) ? current : "";
+  elements.checkinActivityFilter.value = restored;
 }
 
 function renderEntryStatus(participant) {
@@ -865,12 +1300,16 @@ function formatDateTime(value) {
 function findCheckinMatches(query) {
   const term = normalizeSearch(query);
   const compactTerm = term.replaceAll("-", "").replaceAll(" ", "");
+  const activityFilter = safeTrim(elements.checkinActivityFilter?.value || "").toLowerCase();
 
   if (!term) {
     return [];
   }
 
   const exactMatches = state.participants.filter((participant) => {
+    if (activityFilter && normalizeSearch(participant.activityName) !== activityFilter) {
+      return false;
+    }
     const code = normalizeSearch(participant.code);
     return code === term || code.replaceAll("-", "") === compactTerm;
   });
@@ -881,6 +1320,9 @@ function findCheckinMatches(query) {
 
   return state.participants
     .filter((participant) => {
+      if (activityFilter && normalizeSearch(participant.activityName) !== activityFilter) {
+        return false;
+      }
       const haystack = [
         participant.code,
         participant.fullName,
@@ -926,6 +1368,7 @@ function renderCheckinResult() {
   }
 
   const confirmed = Boolean(participant.checkedInAt);
+  const canConfirmEntry = hasPermission("confirmEntry");
   elements.checkinBadge.textContent = confirmed ? "Confirmada" : "Pendente";
   elements.checkinBadge.classList.toggle("is-confirmed", confirmed);
   elements.checkinName.textContent = participant.fullName;
@@ -936,13 +1379,13 @@ function renderCheckinResult() {
   elements.checkinContact.textContent = [participant.phone, participant.email].filter(Boolean).join(" · ") || "-";
   elements.checkinTime.textContent = formatDateTime(participant.checkedInAt);
   const valid = participantIsValid(participant);
-  elements.confirmCheckin.disabled = confirmed || !valid;
+  elements.confirmCheckin.disabled = !canConfirmEntry || confirmed || !valid;
   elements.confirmCheckin.textContent = confirmed
     ? "Entrada confirmada"
     : valid
       ? "Confirmar entrada"
       : "Aguardando validação";
-  elements.undoCheckin.disabled = !confirmed;
+  elements.undoCheckin.disabled = !canConfirmEntry || !confirmed;
 }
 
 function escapeHtml(value) {
@@ -1040,8 +1483,18 @@ function toCsvValue(value) {
   return `"${escaped}"`;
 }
 
+async function fileToDataUrl(file) {
+  if (!file) return "";
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Falha ao ler ficheiro."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function exportCsv() {
-  const header = ["Código", "Atividade", "Nome", "Telefone", "Email", "Cidade", "Adultos", "Crianças<=16", "Pessoas", "Contribuição", "Acordo comissão", "Estado", "Entrada", "Observação"];
+  const header = ["Código", "Atividade", "Nome", "Telefone", "Email", "Cidade", "Adultos", "Crianças<=16", "Pessoas", "Contribuição", "Estado", "Entrada", "Observação"];
   const rows = state.participants.map((participant) => [
     participant.code,
     participant.activityName,
@@ -1053,7 +1506,6 @@ function exportCsv() {
     participant.childrenUnder16,
     participant.guests,
     (participant.agreedAmount || participant.contribution).toFixed(2),
-    participant.committeeAgreement,
     participant.paymentStatus,
     participant.checkedInAt,
     participant.note,
@@ -1066,6 +1518,43 @@ function exportCsv() {
   const link = document.createElement("a");
   link.href = url;
   link.download = "participantes-gabu-hamburg.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportAdvancedCsv() {
+  const byActivity = {};
+  state.participants.forEach((participant) => {
+    const key = participant.activityName || "Atividade geral";
+    if (!byActivity[key]) {
+      byActivity[key] = [];
+    }
+    byActivity[key].push(participant);
+  });
+
+  const lines = [];
+  lines.push(["Resumo por atividade", "Inscrições", "Presentes", "Valor confirmado"]);
+  Object.entries(byActivity).forEach(([activity, participants]) => {
+    const checked = participants.filter((p) => p.checkedInAt).length;
+    const received = participants.reduce((sum, p) => sum + (p.agreedAmount || p.contribution || 0), 0);
+    lines.push([activity, participants.length, checked, received.toFixed(2)]);
+  });
+
+  lines.push([]);
+  lines.push(["Detalhe", "Código", "Nome", "Telefone", "Estado", "Entrada"]);
+  Object.entries(byActivity).forEach(([activity, participants]) => {
+    participants.forEach((p) => {
+      lines.push([activity, p.code, p.fullName, p.phone, p.paymentStatus, p.checkedInAt || ""]);
+    });
+  });
+
+  const csvLines = lines.map((row) => row.map(toCsvValue).join(","));
+  const csv = "\ufeff" + csvLines.join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "participantes-por-atividade.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1095,9 +1584,10 @@ elements.adminLoginForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  setAdminState(true);
   closeAdminDialog();
   await loadServerParticipants();
+  await loadEventConfig();
+  await syncCheckinQueue();
   renderAll();
 });
 
@@ -1111,16 +1601,10 @@ elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(elements.form);
   const email = safeTrim(formData.get("email"));
-  const confirmEmail = safeTrim(formData.get("confirmEmail"));
   const adults = Math.max(0, Number.parseInt(formData.get("adults"), 10) || 0);
   const childrenUnder16 = Math.max(0, Number.parseInt(formData.get("childrenUnder16"), 10) || 0);
   const guests = adults + childrenUnder16;
-  const contribution = adults * 10 + childrenUnder16 * 5;
-
-  if (email && confirmEmail && email.toLowerCase() !== confirmEmail.toLowerCase()) {
-    elements.formStatus.textContent = "Email e confirmação de email não coincidem.";
-    return;
-  }
+  const contribution = adults * state.pricing.adultPrice + childrenUnder16 * state.pricing.childPrice;
 
   if (guests <= 0) {
     elements.formStatus.textContent = "Informa pelo menos 1 pessoa (adulto ou criança).";
@@ -1133,14 +1617,12 @@ elements.form.addEventListener("submit", async (event) => {
     fullName: formData.get("fullName"),
     phone: formData.get("phone"),
     email,
-    confirmEmail,
     city: formData.get("city"),
     adults,
     childrenUnder16,
     guests,
     contribution,
     agreedAmount: contribution,
-    committeeAgreement: formData.get("committeeAgreement"),
     amountConfirmed: false,
     paymentStatus: "Aguardando confirmação do organizador",
     note: formData.get("note"),
@@ -1161,9 +1643,9 @@ elements.form.addEventListener("submit", async (event) => {
   elements.form.reset();
   elements.form.elements.adults.value = "1";
   elements.form.elements.childrenUnder16.value = "0";
-  elements.form.elements.contribution.value = "10";
-  elements.form.elements.committeeAgreement.value = "Padrão da comissão";
-  elements.formStatus.textContent = `Cadastro enviado com sucesso. Codigo de referencia: ${savedParticipant.code}. Vais aguardar a confirmacao da organizacao para receber o QR de entrada.`;
+  elements.form.elements.contribution.value = contribution.toFixed(2);
+  updateContributionHint();
+  elements.formStatus.textContent = `Cadastro enviado com sucesso. Codigo de referencia: ${savedParticipant.code}. Vais aguardar a confirmacao da organizacao.`;
   submitButton.disabled = false;
 });
 
@@ -1178,12 +1660,19 @@ elements.form.elements.adults.addEventListener("input", updateContributionFromGu
 elements.form.elements.childrenUnder16.addEventListener("input", updateContributionFromGuests);
 
 if (elements.savePricingBtn) {
-  elements.savePricingBtn.addEventListener("click", () => {
+  elements.savePricingBtn.addEventListener("click", async () => {
     const a = Number.parseFloat(elements.adultPriceInput.value);
     const c = Number.parseFloat(elements.childPriceInput.value);
     if (Number.isFinite(a) && a >= 0) state.pricing.adultPrice = a;
     if (Number.isFinite(c) && c >= 0) state.pricing.childPrice = c;
     savePricing();
+    state.eventConfig.adultPrice = state.pricing.adultPrice;
+    state.eventConfig.childPrice = state.pricing.childPrice;
+    if (hasPermission("manageSettings") && !isFileMode()) {
+      try {
+        await saveEventConfig();
+      } catch {}
+    }
     updateContributionHint();
     updateContributionFromGuests();
     elements.savePricingBtn.textContent = "Guardado ✓";
@@ -1193,7 +1682,7 @@ if (elements.savePricingBtn) {
 
 elements.checkinForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (!state.isAdmin) {
+  if (!hasPermission("confirmEntry")) {
     openAdminDialog();
     return;
   }
@@ -1232,7 +1721,7 @@ elements.checkinMatchList.addEventListener("click", (event) => {
 elements.participantsBody.addEventListener("click", async (event) => {
   const deleteBtn = event.target.closest("button[data-delete-code]");
   if (deleteBtn) {
-    if (!state.isAdmin) { openAdminDialog(); return; }
+    if (!hasPermission("deleteParticipants")) { openAdminDialog(); return; }
     const code = deleteBtn.dataset.deleteCode;
     const participant = state.participants.find((p) => p.code === code);
     const name = participant?.fullName || code;
@@ -1246,14 +1735,18 @@ elements.participantsBody.addEventListener("click", async (event) => {
     return;
   }
 
-  if (!state.isAdmin) {
+  if (!hasPermission("confirmPayments")) {
     openAdminDialog();
     return;
   }
 
   const code = button.dataset.confirmCode;
   const amountInput = elements.participantsBody.querySelector(`input[data-amount-for="${code}"]`);
+  const proofNoteInput = elements.participantsBody.querySelector(`input[data-proof-note-for="${code}"]`);
+  const proofFileInput = elements.participantsBody.querySelector(`input[data-proof-file-for="${code}"]`);
   const agreedAmount = Math.max(0, Number.parseFloat(amountInput?.value || "0") || 0);
+  const paymentProofNote = safeTrim(proofNoteInput?.value || "");
+  const file = proofFileInput?.files?.[0];
   const participant = state.participants.find((item) => item.code === code);
 
   if (!participant) {
@@ -1263,7 +1756,8 @@ elements.participantsBody.addEventListener("click", async (event) => {
 
   try {
     button.disabled = true;
-    const updated = await confirmPayment(participant, agreedAmount);
+    const paymentProofImage = await fileToDataUrl(file).catch(() => "");
+    const updated = await confirmPayment(participant, agreedAmount, paymentProofImage, paymentProofNote);
     updateParticipant(updated);
     renderPass(updated);
     renderAll();
@@ -1276,26 +1770,68 @@ elements.participantsBody.addEventListener("click", async (event) => {
   }
 });
 
-elements.confirmCheckin.addEventListener("click", async () => {
+async function confirmCurrentCheckinEntry(source = "manual") {
   if (!state.currentCheckin) {
+    return;
+  }
+
+  const participant = state.currentCheckin;
+  const valid = participantIsValid(participant);
+  const alreadyCheckedIn = Boolean(participant.checkedInAt);
+
+  if (!valid) {
+    elements.checkinStatus.textContent = "Passe pendente. A entrada só pode ser confirmada após validação.";
+    if (source === "scan") {
+      playScanFeedback("warning");
+    }
+    renderCheckinResult();
+    return;
+  }
+
+  if (alreadyCheckedIn) {
+    elements.checkinStatus.textContent = "Este participante já tem entrada confirmada.";
+    if (source === "scan") {
+      playScanFeedback("info");
+    }
+    renderCheckinResult();
     return;
   }
 
   try {
     elements.confirmCheckin.disabled = true;
-    elements.checkinStatus.textContent = "A confirmar entrada...";
-    const updatedParticipant = await saveCheckin(state.currentCheckin, new Date().toISOString());
+    elements.checkinStatus.textContent = source === "scan"
+      ? "QR válido. A confirmar entrada automaticamente..."
+      : "A confirmar entrada...";
+    const updatedParticipant = await saveCheckin(participant, new Date().toISOString());
     state.currentCheckin = updateParticipant(updatedParticipant);
     renderAll();
-    elements.checkinStatus.textContent = "Entrada confirmada com sucesso.";
+    const queuedOffline = !navigator.onLine;
+    elements.checkinStatus.textContent = queuedOffline
+      ? "Sem internet: entrada guardada localmente e será sincronizada quando voltar conexão."
+      : (source === "scan" ? "Entrada confirmada automaticamente via QR." : "Entrada confirmada com sucesso.");
+    if (source === "scan") {
+      playScanFeedback("success");
+    }
   } catch (error) {
     elements.checkinStatus.textContent = error.message || "Não foi possível confirmar a entrada.";
+    if (source === "scan") {
+      playScanFeedback("error");
+    }
     renderCheckinResult();
   }
+}
+
+elements.confirmCheckin.addEventListener("click", async () => {
+  await confirmCurrentCheckinEntry("manual");
 });
 
 elements.undoCheckin.addEventListener("click", async () => {
   if (!state.currentCheckin) {
+    return;
+  }
+
+  if (!hasPermission("confirmEntry")) {
+    openAdminDialog();
     return;
   }
 
@@ -1379,6 +1915,29 @@ elements.printPass.addEventListener("click", () => {
 
 elements.participantSearch.addEventListener("input", renderParticipants);
 elements.exportCsv.addEventListener("click", exportCsv);
+if (elements.exportAdvancedCsv) {
+  elements.exportAdvancedCsv.addEventListener("click", exportAdvancedCsv);
+}
+if (elements.checkinActivityFilter) {
+  elements.checkinActivityFilter.addEventListener("change", () => {
+    if (safeTrim(elements.checkinQuery.value) !== "") {
+      elements.checkinForm.dispatchEvent(new Event("submit", { cancelable: true }));
+    }
+  });
+}
+if (elements.saveEventConfigBtn) {
+  elements.saveEventConfigBtn.addEventListener("click", async () => {
+    try {
+      await saveEventConfig();
+      elements.formStatus.textContent = "Configuração do evento guardada com sucesso.";
+    } catch (error) {
+      elements.formStatus.textContent = error.message || "Falha ao guardar configuração do evento.";
+    }
+  });
+}
+window.addEventListener("online", () => {
+  syncCheckinQueue();
+});
 
 async function deleteParticipant(code) {
   if (!isFileMode()) {
@@ -1408,15 +1967,18 @@ async function deleteParticipant(code) {
 
 async function startScanner() {
   if (!elements.scannerVideo) return;
+  if (!hasPermission("confirmEntry")) {
+    openAdminDialog();
+    return;
+  }
   try {
+    ensureScanAudioContext();
     state.scannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
     elements.scannerVideo.srcObject = state.scannerStream;
     await elements.scannerVideo.play();
     elements.startScannerBtn.disabled = true;
     elements.stopScannerBtn.disabled = false;
     elements.scannerStatus.textContent = "Câmara ativa. Aponta o QR code.";
-    elements.scannerEmptyResult.hidden = false;
-    elements.scannerResultPanel.hidden = true;
     scanLoop();
   } catch (err) {
     elements.scannerStatus.textContent = `Erro ao aceder à câmara: ${err.message}`;
@@ -1467,40 +2029,49 @@ async function handleScannedCode(data) {
     code = safeTrim(url.searchParams.get("code")) || code;
   } catch {}
 
+  if (isScanLocked(code)) {
+    elements.checkinStatus.textContent = "QR lido há instantes. Aguarda 2 segundos para nova validação.";
+    playScanFeedback("info");
+    return;
+  }
+
   let participant = state.participants.find((p) => p.code === code);
   if (!participant) {
     participant = await loadPublicPass(code);
     if (participant) mergeParticipants([participant]);
   }
 
-  elements.scannerEmptyResult.hidden = true;
-  elements.scannerResultPanel.hidden = false;
-
   if (!participant) {
-    elements.scannerBadge.textContent = "Não encontrado";
-    elements.scannerBadge.className = "scanner-badge is-invalid";
-    elements.scannerName.textContent = "Participante desconhecido";
-    elements.scannerCode.textContent = code;
-    elements.scannerActivity.textContent = "-";
-    elements.scannerGuests.textContent = "-";
-    elements.scannerContribution.textContent = "-";
-    elements.scannerValidity.textContent = "Inválido";
-    elements.scannerEntry.textContent = "-";
     elements.scannerStatus.textContent = `Código scaneado: ${code}. Passe não encontrado.`;
+    elements.checkinStatus.textContent = "Não encontrei nenhum participante para este QR.";
+    playScanFeedback("error");
+    elements.checkinResult.hidden = true;
+    elements.checkinEmptyResult.hidden = false;
+    elements.checkinMatches.hidden = true;
     return;
   }
 
+  selectCheckinParticipant(participant);
   const valid = participantIsValid(participant);
-  elements.scannerBadge.textContent = valid ? (participant.checkedInAt ? "✅ Já deu entrada" : "✅ Válido - pode entrar") : "❌ Pendente - sem validade";
-  elements.scannerBadge.className = `scanner-badge ${valid ? "is-valid" : "is-invalid"}`;
-  elements.scannerName.textContent = participant.fullName;
-  elements.scannerCode.textContent = participant.code;
-  elements.scannerActivity.textContent = participant.activityName;
-  elements.scannerGuests.textContent = `${participant.guests} pessoa(s) (${participant.adults} adulto(s), ${participant.childrenUnder16} criança(s))`;
-  elements.scannerContribution.textContent = euroFormatter.format(participant.agreedAmount || participant.contribution);
-  elements.scannerValidity.textContent = valid ? "Válido" : "Pendente";
-  elements.scannerEntry.textContent = participant.checkedInAt ? formatDateTime(participant.checkedInAt) : "Ainda não confirmada";
-  elements.scannerStatus.textContent = `Scan concluído: ${participant.fullName}`;
+  elements.scannerStatus.textContent = `Scan concluído: ${participant.fullName}.`;
+  elements.checkinStatus.textContent = valid
+    ? "QR reconhecido. Participante carregado para confirmar entrada."
+    : "QR reconhecido, mas o passe ainda está pendente de validação.";
+
+  if (valid && !participant.checkedInAt) {
+    await confirmCurrentCheckinEntry("scan");
+    return;
+  }
+
+  if (valid && participant.checkedInAt) {
+    elements.checkinStatus.textContent = "QR reconhecido. Esta entrada já estava confirmada.";
+    playScanFeedback("info");
+    return;
+  }
+
+  if (!valid) {
+    playScanFeedback("warning");
+  }
 }
 
 if (elements.startScannerBtn) elements.startScannerBtn.addEventListener("click", startScanner);
@@ -1525,14 +2096,17 @@ elements.clearLocal.addEventListener("click", () => {
 
 async function initializeApp() {
   loadPricing();
+  renderEventConfigInputs();
   loadLocalParticipants();
   renderAll();
   setAdminState(false);
+  await loadEventConfig();
   await openPassFromQuery();
   await checkAdminSession();
 
   if (state.isAdmin) {
     await loadServerParticipants();
+    await syncCheckinQueue();
     renderAll();
   }
 }

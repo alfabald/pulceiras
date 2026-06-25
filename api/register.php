@@ -24,11 +24,6 @@ if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
     json_response(['error' => 'Email inválido.'], 422);
 }
 
-$confirmEmail = clean_text($input['confirmEmail'] ?? '', 120);
-if ($email !== '' && $confirmEmail !== '' && strcasecmp($email, $confirmEmail) !== 0) {
-    json_response(['error' => 'Email e confirmação de email não coincidem.'], 422);
-}
-
 $clientCode = clean_text($input['code'] ?? '', 40);
 $code = preg_match('/^GABU-\d{4}-[A-Z0-9]{4,12}$/', $clientCode) ? $clientCode : make_code();
 
@@ -40,7 +35,7 @@ if ($guests <= 0) {
     json_response(['error' => 'Informa pelo menos 1 pessoa (adulto ou criança).'], 422);
 }
 
-$calculatedContribution = normalize_amount(($adults * 10) + ($childrenUnder16 * 5));
+$calculatedContribution = normalize_amount($input['contribution'] ?? (($adults * 10) + ($childrenUnder16 * 5)));
 
 $participant = normalize_participant([
     'code' => $code,
@@ -56,7 +51,6 @@ $participant = normalize_participant([
     'agreedAmount' => $calculatedContribution,
     'amountConfirmed' => false,
     'amountConfirmedAt' => '',
-    'committeeAgreement' => clean_text($input['committeeAgreement'] ?? 'Padrão da comissão', 120),
     'paymentStatus' => 'Aguardando confirmação do organizador',
     'note' => clean_text($input['note'] ?? '', 500),
     'checkedInAt' => '',
@@ -66,6 +60,11 @@ $participants = read_participants();
 $participants[] = $participant;
 
 write_participants($participants);
+
+append_audit_log('register', $code, [
+    'activity' => $participant['activityName'] ?? '',
+    'guests' => $participant['guests'] ?? 0,
+]);
 
 json_response([
     'participant' => $participant,

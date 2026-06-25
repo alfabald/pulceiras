@@ -17,14 +17,22 @@ if ($pin === '') {
     json_response(['error' => 'Senha é obrigatória.'], 422);
 }
 
-if (!verify_admin_pin($pin)) {
+$role = verify_login_role($pin);
+if ($role === '') {
+    append_audit_log('login_failed', '', ['reason' => 'invalid_pin']);
     json_response(['error' => 'Senha incorreta.'], 401);
 }
 
 start_admin_session();
 session_regenerate_id(true);
 $_SESSION['is_admin'] = true;
+$_SESSION['role'] = $role;
+$_SESSION['permissions'] = role_permissions($role);
+
+append_audit_log('login_success', '', ['role' => $role]);
 
 json_response([
     'isAdmin' => true,
+    'role' => $role,
+    'permissions' => $_SESSION['permissions'],
 ]);

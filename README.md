@@ -19,6 +19,30 @@ Sistema para substituir pulseiras físicas por passes digitais com QR e confirma
 - Suporta PostgreSQL por `DATABASE_URL` e Supabase por variáveis dedicadas.
 - Permite exportar a lista em CSV.
 
+## Novidades implementadas
+
+- Scanner QR dentro da área `Entrada`, sem necessidade de ir para outra aba.
+- Confirmação automática de entrada após scan de QR válido.
+- Alertas sonoros no scanner (sucesso, pendente, já confirmado e erro).
+- Filtro por atividade no check-in.
+- Dashboard rápido do dia do evento (presentes, no-show, última hora e taxa de presença).
+- Modo offline para check-in com fila local e sincronização automática ao voltar internet.
+- Proteção anti-duplicidade no scan (cooldown de 2 segundos) e no backend para entrada já confirmada.
+- Perfis de acesso por PIN: `admin`, `entry`, `finance`, `viewer`.
+- Histórico de auditoria no backend e visualização na aba de participantes.
+- Comprovante opcional na confirmação de pagamento (nota + imagem).
+- Exportação avançada por atividade (`participantes-por-atividade.csv`).
+- Configuração por evento (nome, data, local, catálogo de atividades, equipes e preços) via API e interface.
+
+## Perfis e permissões
+
+- `admin`: acesso total.
+- `entry`: confirma entrada e consulta lista.
+- `finance`: confirma montantes e consulta lista.
+- `viewer`: apenas consulta lista.
+
+Os PINs de `entry`, `finance` e `viewer` são configurados por variáveis de ambiente em `.env`.
+
 ## Como usar agora
 
 Abre o ficheiro `index.html` no navegador. Esta forma funciona mesmo sem PHP, mas os dados ficam guardados apenas nesse navegador.

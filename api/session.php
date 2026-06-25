@@ -9,4 +9,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 
 json_response([
     'isAdmin' => is_admin(),
+    'role' => current_admin_role(),
+    'permissions' => $_SESSION['permissions'] ?? [],
 ]);

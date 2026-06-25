@@ -8,6 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 start_admin_session();
+append_audit_log('logout', '', ['role' => current_admin_role()]);
 $_SESSION = [];
 
 if (ini_get('session.use_cookies')) {
@@ -19,4 +20,6 @@ session_destroy();
 
 json_response([
     'isAdmin' => false,
+    'role' => 'none',
+    'permissions' => [],
 ]);

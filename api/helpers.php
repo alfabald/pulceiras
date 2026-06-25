@@ -147,11 +147,12 @@ function normalize_participant(array $input): array
         'agreedAmount' => $agreedAmount,
         'amountConfirmed' => $amountConfirmed,
         'amountConfirmedAt' => $amountConfirmedAt,
-        'committeeAgreement' => clean_text($input['committeeAgreement'] ?? 'Padrão da comissão', 120),
         'paymentStatus' => clean_text(
             $input['paymentStatus'] ?? ($amountConfirmed ? 'Confirmado pelo organizador' : 'Aguardando confirmação do organizador'),
             90
         ),
+        'paymentProofImage' => clean_text($input['paymentProofImage'] ?? '', 400000),
+        'paymentProofNote' => clean_text($input['paymentProofNote'] ?? '', 300),
         'note' => clean_text($input['note'] ?? '', 500),
         'checkedInAt' => $checkedInAt,
         'createdAt' => $createdAt,
@@ -490,6 +491,198 @@ function data_file(): string
     return $file;
 }
 
+function event_config_file(): string
+{
+    $directory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
+    if (!is_dir($directory)) {
+        mkdir($directory, 0775, true);
+    }
+
+    $file = $directory . DIRECTORY_SEPARATOR . 'event-config.json';
+    if (!file_exists($file)) {
+        $default = [
+            'eventName' => 'Passe de Atividades Solidárias',
+            'eventDate' => '',
+            'eventLocation' => '',
+            'adultPrice' => 10,
+            'childPrice' => 5,
+            'activityCatalog' => [],
+            'teams' => [],
+            'updatedAt' => date(DATE_ATOM),
+        ];
+        file_put_contents($file, json_encode($default, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n", LOCK_EX);
+    }
+
+    return $file;
+}
+
+function read_event_config(): array
+{
+    $contents = file_get_contents(event_config_file()) ?: '{}';
+    $decoded = json_decode($contents, true);
+    if (!is_array($decoded)) {
+        $decoded = [];
+    }
+
+    $adultPrice = normalize_amount($decoded['adultPrice'] ?? 10);
+    $childPrice = normalize_amount($decoded['childPrice'] ?? 5);
+
+    $activityCatalog = [];
+    foreach (($decoded['activityCatalog'] ?? []) as $name) {
+        $clean = clean_text($name, 120);
+        if ($clean !== '') {
+            $activityCatalog[] = $clean;
+        }
+    }
+
+    $teams = [];
+    foreach (($decoded['teams'] ?? []) as $name) {
+        $clean = clean_text($name, 80);
+        if ($clean !== '') {
+            $teams[] = $clean;
+        }
+    }
+
+    return [
+        'eventName' => clean_text($decoded['eventName'] ?? 'Passe de Atividades Solidárias', 160),
+        'eventDate' => clean_text($decoded['eventDate'] ?? '', 40),
+        'eventLocation' => clean_text($decoded['eventLocation'] ?? '', 160),
+        'adultPrice' => $adultPrice,
+        'childPrice' => $childPrice,
+        'activityCatalog' => array_values(array_unique($activityCatalog)),
+        'teams' => array_values(array_unique($teams)),
+        'updatedAt' => clean_text($decoded['updatedAt'] ?? date(DATE_ATOM), 80),
+    ];
+}
+
+function write_event_config(array $input): array
+{
+    $current = read_event_config();
+    $next = [
+        'eventName' => clean_text($input['eventName'] ?? $current['eventName'], 160),
+        'eventDate' => clean_text($input['eventDate'] ?? $current['eventDate'], 40),
+        'eventLocation' => clean_text($input['eventLocation'] ?? $current['eventLocation'], 160),
+        'adultPrice' => normalize_amount($input['adultPrice'] ?? $current['adultPrice']),
+        'childPrice' => normalize_amount($input['childPrice'] ?? $current['childPrice']),
+        'activityCatalog' => $current['activityCatalog'],
+        'teams' => $current['teams'],
+        'updatedAt' => date(DATE_ATOM),
+    ];
+
+    if (array_key_exists('activityCatalog', $input) && is_array($input['activityCatalog'])) {
+        $list = [];
+        foreach ($input['activityCatalog'] as $name) {
+            $clean = clean_text($name, 120);
+            if ($clean !== '') {
+                $list[] = $clean;
+            }
+        }
+        $next['activityCatalog'] = array_values(array_unique($list));
+    }
+
+    if (array_key_exists('teams', $input) && is_array($input['teams'])) {
+        $list = [];
+        foreach ($input['teams'] as $name) {
+            $clean = clean_text($name, 80);
+            if ($clean !== '') {
+                $list[] = $clean;
+            }
+        }
+        $next['teams'] = array_values(array_unique($list));
+    }
+
+    file_put_contents(event_config_file(), json_encode($next, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n", LOCK_EX);
+    return $next;
+}
+
+function audit_log_file(): string
+{
+    $directory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
+    if (!is_dir($directory)) {
+        mkdir($directory, 0775, true);
+    }
+
+    return $directory . DIRECTORY_SEPARATOR . 'audit-log.jsonl';
+}
+
+function current_admin_role(): string
+{
+    start_admin_session();
+    $role = clean_text($_SESSION['role'] ?? '', 40);
+    return $role !== '' ? $role : 'none';
+}
+
+function role_permissions(string $role): array
+{
+    $map = [
+        'admin' => ['viewParticipants', 'confirmEntry', 'confirmPayments', 'deleteParticipants', 'manageSettings', 'viewAudit'],
+        'entry' => ['viewParticipants', 'confirmEntry'],
+        'finance' => ['viewParticipants', 'confirmPayments'],
+        'viewer' => ['viewParticipants'],
+    ];
+
+    return $map[$role] ?? [];
+}
+
+function has_permission(string $permission): bool
+{
+    if (!is_admin()) {
+        return false;
+    }
+
+    $permissions = $_SESSION['permissions'] ?? [];
+    if (!is_array($permissions)) {
+        return false;
+    }
+
+    return in_array($permission, $permissions, true);
+}
+
+function require_permission(string $permission): void
+{
+    if (!has_permission($permission)) {
+        json_response(['error' => 'Sem permissão para esta operação.'], 403);
+    }
+}
+
+function append_audit_log(string $action, string $targetCode = '', array $meta = []): void
+{
+    $entry = [
+        'timestamp' => date(DATE_ATOM),
+        'action' => clean_text($action, 60),
+        'targetCode' => clean_text($targetCode, 40),
+        'actorRole' => current_admin_role(),
+        'ip' => clean_text($_SERVER['REMOTE_ADDR'] ?? '', 80),
+        'meta' => $meta,
+    ];
+
+    file_put_contents(audit_log_file(), json_encode($entry, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+}
+
+function read_audit_logs(int $limit = 300): array
+{
+    $file = audit_log_file();
+    if (!file_exists($file)) {
+        return [];
+    }
+
+    $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) {
+        return [];
+    }
+
+    $lines = array_slice($lines, -$limit);
+    $logs = [];
+    foreach ($lines as $line) {
+        $decoded = json_decode($line, true);
+        if (is_array($decoded)) {
+            $logs[] = $decoded;
+        }
+    }
+
+    return array_reverse($logs);
+}
+
 function read_participants(): array
 {
     if (postgres_enabled()) {
@@ -596,15 +789,37 @@ function is_admin(): bool
 
 function require_admin(): void
 {
-    if (!is_admin()) {
-        json_response(['error' => 'Acesso reservado aos organizadores.'], 401);
-    }
+    require_permission('manageSettings');
 }
 
 function verify_admin_pin(string $pin): bool
 {
     $hash = hash('sha256', ADMIN_PIN_SALT . $pin);
     return hash_equals(ADMIN_PIN_HASH, $hash);
+}
+
+function verify_login_role(string $pin): string
+{
+    if (verify_admin_pin($pin)) {
+        return 'admin';
+    }
+
+    $entryPin = env_string('ENTRY_PIN');
+    if ($entryPin !== '' && hash_equals($entryPin, $pin)) {
+        return 'entry';
+    }
+
+    $financePin = env_string('FINANCE_PIN');
+    if ($financePin !== '' && hash_equals($financePin, $pin)) {
+        return 'finance';
+    }
+
+    $viewerPin = env_string('VIEWER_PIN');
+    if ($viewerPin !== '' && hash_equals($viewerPin, $pin)) {
+        return 'viewer';
+    }
+
+    return '';
 }
 
 function check_rate_limit(string $identifier = '', int $maxAttempts = 10, int $windowSeconds = 60): void

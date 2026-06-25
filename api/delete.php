@@ -7,7 +7,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'Método não permitido.'], 405);
 }
 
-require_admin();
+require_permission('deleteParticipants');
 check_rate_limit('delete:' . ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'), 30, 60);
 
 $input = validate_json_request();
@@ -25,5 +25,6 @@ if (count($filtered) === count($participants)) {
 }
 
 write_participants($filtered);
+append_audit_log('delete_participant', $code);
 
 json_response(['deleted' => true, 'code' => $code]);

@@ -38,7 +38,6 @@ json_response([
         'guests' => $participant['guests'],
         'agreedAmount' => $participant['agreedAmount'],
         'contribution' => $participant['contribution'],
-        'committeeAgreement' => $participant['committeeAgreement'],
         'paymentStatus' => $participant['paymentStatus'],
         'amountConfirmed' => (bool) $participant['amountConfirmed'],
         'amountConfirmedAt' => $participant['amountConfirmedAt'],
