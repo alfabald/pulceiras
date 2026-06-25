@@ -14,6 +14,7 @@ $guests = 0;
 $checkedIn = 0;
 $pledged = 0.0;
 $received = 0.0;
+$validated = 0;
 
 foreach ($participants as $participant) {
     $participantGuests = (int) ($participant['guests'] ?? 0);
@@ -25,7 +26,8 @@ foreach ($participants as $participant) {
         $checkedIn += $participantGuests;
     }
 
-    if (($participant['paymentStatus'] ?? 'Prometido') !== 'Prometido') {
+    if (bool_value($participant['amountConfirmed'] ?? false)) {
+        $validated += 1;
         $received += $contribution;
     }
 }
@@ -36,6 +38,7 @@ json_response([
         'registrations' => count($participants),
         'guests' => $guests,
         'checkedIn' => $checkedIn,
+        'validatedPasses' => $validated,
         'pledged' => round($pledged, 2),
         'received' => round($received, 2),
     ],

@@ -2,6 +2,8 @@ const STORAGE_KEY = "gabuHamburgParticipantsV1";
 const API_REGISTER = "api/register.php";
 const API_PARTICIPANTS = "api/participants.php";
 const API_CHECKIN = "api/checkin.php";
+const API_CONFIRM_PAYMENT = "api/confirm-payment.php";
+const API_PASS = "api/pass.php";
 const API_LOGIN = "api/login.php";
 const API_LOGOUT = "api/logout.php";
 const API_SESSION = "api/session.php";
@@ -12,6 +14,7 @@ const state = {
   currentPass: null,
   currentCheckin: null,
   isAdmin: false,
+  passPollingTimer: null,
 };
 
 const elements = {
@@ -23,9 +26,11 @@ const elements = {
   emptyPass: document.querySelector("#emptyPass"),
   passCard: document.querySelector("#passCard"),
   passSeal: document.querySelector("#passSeal"),
+  passStatus: document.querySelector("#passStatus"),
   passName: document.querySelector("#passName"),
   passCode: document.querySelector("#passCode"),
   passContribution: document.querySelector("#passContribution"),
+  passActivity: document.querySelector("#passActivity"),
   passMeta: document.querySelector("#passMeta"),
   copyPass: document.querySelector("#copyPass"),
   sharePass: document.querySelector("#sharePass"),
@@ -107,19 +112,37 @@ function makeCode() {
 }
 
 function normalizeParticipant(participant) {
+  const contribution = Math.max(0, Number.parseFloat(participant.contribution) || 0);
+  const agreedAmount = Math.max(0, Number.parseFloat(participant.agreedAmount ?? contribution) || 0);
+  const amountConfirmed = Boolean(participant.amountConfirmed);
+
   return {
     code: safeTrim(participant.code) || makeCode(),
     fullName: safeTrim(participant.fullName),
     phone: safeTrim(participant.phone),
     email: safeTrim(participant.email),
     city: safeTrim(participant.city),
+    activityName: safeTrim(participant.activityName) || "Atividade geral",
     guests: Math.max(1, Number.parseInt(participant.guests, 10) || 1),
-    contribution: Math.max(0, Number.parseFloat(participant.contribution) || 0),
-    paymentStatus: safeTrim(participant.paymentStatus) || "Prometido",
+    contribution,
+    agreedAmount,
+    amountConfirmed,
+    amountConfirmedAt: safeTrim(participant.amountConfirmedAt),
+    paymentStatus:
+      safeTrim(participant.paymentStatus) ||
+      (amountConfirmed ? "Confirmado pelo organizador" : "Aguardando confirmação do organizador"),
     note: safeTrim(participant.note),
     checkedInAt: participant.checkedInAt || "",
     createdAt: participant.createdAt || new Date().toISOString(),
   };
+}
+
+function participantIsValid(participant) {
+  return Boolean(participant?.amountConfirmed);
+}
+
+function passStatusText(participant) {
+  return participantIsValid(participant) ? "Válido" : "Pendente";
 }
 
 function saveLocalParticipants() {
@@ -173,13 +196,18 @@ async function loadServerParticipants() {
 async function saveParticipant(participant) {
   if (!isFileMode()) {
     try {
+      const payload = {
+        ...participant,
+        confirmEmail: participant.email,
+      };
+
       const response = await fetch(API_REGISTER, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify(participant),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -221,18 +249,119 @@ async function saveCheckin(participant, checkedInAt) {
         throw new Error("Precisas entrar como organizador.");
       }
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.participant) {
-          return normalizeParticipant(data.participant);
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Não foi possível confirmar a entrada.");
+      }
+
+      const data = await response.json();
+      if (data.participant) {
+        return normalizeParticipant(data.participant);
       }
     } catch {
-      // Keep check-in usable even when the PHP API is unavailable.
+      throw new Error("Não foi possível confirmar a entrada.");
     }
   }
 
   return updatedParticipant;
+}
+
+async function confirmPayment(participant, agreedAmount) {
+  const updatedParticipant = normalizeParticipant({
+    ...participant,
+    agreedAmount,
+    contribution: agreedAmount,
+    amountConfirmed: true,
+    amountConfirmedAt: new Date().toISOString(),
+    paymentStatus: "Confirmado pelo organizador",
+  });
+
+  if (!isFileMode()) {
+    const response = await fetch(API_CONFIRM_PAYMENT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        code: participant.code,
+        agreedAmount,
+      }),
+    });
+
+    if (response.status === 401) {
+      setAdminState(false, { clearData: true });
+      throw new Error("Precisas entrar como organizador.");
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Não foi possível confirmar o montante.");
+    }
+
+    const data = await response.json();
+    if (data.participant) {
+      return normalizeParticipant(data.participant);
+    }
+  }
+
+  return updatedParticipant;
+}
+
+async function loadPublicPass(code) {
+  if (isFileMode()) {
+    return null;
+  }
+
+  const response = await fetch(`${API_PASS}?code=${encodeURIComponent(code)}`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json();
+  if (!data.participant) {
+    return null;
+  }
+
+  return normalizeParticipant(data.participant);
+}
+
+function stopPassWatcher() {
+  if (state.passPollingTimer) {
+    clearInterval(state.passPollingTimer);
+    state.passPollingTimer = null;
+  }
+}
+
+function startPassWatcher(participant) {
+  stopPassWatcher();
+
+  if (!participant || participantIsValid(participant) || isFileMode()) {
+    return;
+  }
+
+  state.passPollingTimer = setInterval(async () => {
+    const fresh = await loadPublicPass(participant.code);
+    if (!fresh) {
+      return;
+    }
+
+    if (!participantIsValid(fresh)) {
+      return;
+    }
+
+    updateParticipant(fresh);
+    renderPass(fresh);
+    renderAll();
+    stopPassWatcher();
+
+    if (typeof window !== "undefined") {
+      window.alert("Passe validado pelo organizador. Já está apto para entrada.");
+    }
+  }, 15000);
 }
 
 function isAdminView(viewId) {
@@ -377,16 +506,18 @@ function getPassUrl(participant) {
 
 function participantText(participant) {
   return [
-    "Passe Solidário Gabú Hamburg",
+    "Passe de Atividade",
+    `Atividade: ${participant.activityName}`,
     `Nome: ${participant.fullName}`,
     `Código: ${participant.code}`,
     `Pessoas: ${participant.guests}`,
-    `Contribuição: ${euroFormatter.format(participant.contribution)}`,
+    `Montante acordado: ${euroFormatter.format(participant.agreedAmount || participant.contribution)}`,
+    `Validade: ${passStatusText(participant)}`,
     `Link: ${getPassUrl(participant)}`,
   ].join("\n");
 }
 
-function openPassFromQuery() {
+async function openPassFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const code = safeTrim(params.get("code"));
 
@@ -394,7 +525,15 @@ function openPassFromQuery() {
     return;
   }
 
-  const participant = state.participants.find((item) => item.code === code);
+  let participant = state.participants.find((item) => item.code === code);
+
+  if (!participant) {
+    participant = await loadPublicPass(code);
+    if (participant) {
+      mergeParticipants([participant]);
+    }
+  }
+
   if (!participant) {
     return;
   }
@@ -429,10 +568,13 @@ function renderMetrics() {
   const checkedIn = state.participants.reduce((sum, participant) => {
     return participant.checkedInAt ? sum + participant.guests : sum;
   }, 0);
-  const pledged = state.participants.reduce((sum, participant) => sum + participant.contribution, 0);
+  const pledged = state.participants.reduce(
+    (sum, participant) => sum + (participant.agreedAmount || participant.contribution),
+    0
+  );
   const received = state.participants
-    .filter((participant) => participant.paymentStatus !== "Prometido")
-    .reduce((sum, participant) => sum + participant.contribution, 0);
+    .filter((participant) => participantIsValid(participant))
+    .reduce((sum, participant) => sum + (participant.agreedAmount || participant.contribution), 0);
 
   elements.metricRegistrations.textContent = registrations;
   elements.metricGuests.textContent = guests;
@@ -446,6 +588,7 @@ function renderParticipants() {
   const participants = state.participants.filter((participant) => {
     const haystack = [
       participant.code,
+      participant.activityName,
       participant.fullName,
       participant.phone,
       participant.email,
@@ -459,14 +602,27 @@ function renderParticipants() {
 
   participants.forEach((participant) => {
     const row = document.createElement("tr");
+    const valid = participantIsValid(participant);
+    const statusChip = `<span class="status-chip ${valid ? "is-valid" : "is-pending"}">${valid ? "Válido" : "Pendente"}</span>`;
+    const agreedAmount = participant.agreedAmount || participant.contribution;
+
     row.innerHTML = `
       <td><strong class="code-text">${escapeHtml(participant.code)}</strong></td>
+      <td>${escapeHtml(participant.activityName || "Atividade geral")}</td>
       <td>${escapeHtml(participant.fullName)}<br><small>${escapeHtml(participant.city || "-")}</small></td>
       <td>${participant.guests}</td>
-      <td>${escapeHtml(euroFormatter.format(participant.contribution))}</td>
+      <td>${escapeHtml(euroFormatter.format(agreedAmount))}</td>
+      <td>${statusChip}</td>
       <td>${escapeHtml(participant.paymentStatus)}</td>
       <td>${renderEntryStatus(participant)}</td>
       <td>${escapeHtml(participant.phone)}${participant.email ? `<br><small>${escapeHtml(participant.email)}</small>` : ""}</td>
+      <td>
+        ${valid ? "<small>Confirmado</small>" : `
+        <div class="action-inline">
+          <input class="confirm-amount" type="number" min="0" step="0.01" value="${agreedAmount}" data-amount-for="${escapeHtml(participant.code)}">
+          <button type="button" class="secondary-action" data-confirm-code="${escapeHtml(participant.code)}">Confirmar</button>
+        </div>`}
+      </td>
     `;
     elements.participantsBody.appendChild(row);
   });
@@ -478,10 +634,13 @@ function renderTransparency() {
   // Calcular métricas
   const registrations = state.participants.length;
   const guests = state.participants.reduce((sum, participant) => sum + participant.guests, 0);
-  const pledged = state.participants.reduce((sum, participant) => sum + participant.contribution, 0);
+  const pledged = state.participants.reduce(
+    (sum, participant) => sum + (participant.agreedAmount || participant.contribution),
+    0
+  );
   const received = state.participants
-    .filter((participant) => participant.paymentStatus !== "Prometido")
-    .reduce((sum, participant) => sum + participant.contribution, 0);
+    .filter((participant) => participantIsValid(participant))
+    .reduce((sum, participant) => sum + (participant.agreedAmount || participant.contribution), 0);
 
   // Atualizar métricas
   elements.transparencyRegistrations.textContent = registrations;
@@ -529,7 +688,7 @@ function renderTransparency() {
       paymentSummary[status] = { count: 0, amount: 0 };
     }
     paymentSummary[status].count += 1;
-    paymentSummary[status].amount += participant.contribution;
+    paymentSummary[status].amount += participant.agreedAmount || participant.contribution;
   });
 
   // Renderizar status de pagamento
@@ -555,11 +714,22 @@ function renderPass(participant) {
   state.currentPass = participant;
   elements.emptyPass.hidden = true;
   elements.passCard.hidden = false;
+  const valid = participantIsValid(participant);
   elements.passName.textContent = participant.fullName;
   elements.passCode.textContent = participant.code;
-  elements.passContribution.textContent = euroFormatter.format(participant.contribution);
+  elements.passContribution.textContent = euroFormatter.format(participant.agreedAmount || participant.contribution);
+  elements.passActivity.textContent = participant.activityName || "Atividade geral";
+  elements.passStatus.textContent = valid ? "Válido" : "Pendente";
+  elements.passStatus.classList.toggle("is-valid", valid);
+  elements.passStatus.classList.toggle("is-pending", !valid);
   elements.passMeta.textContent = `${participant.guests} pessoa(s) - ${participant.paymentStatus}`;
   generateQRCode(participant);
+
+  if (participantIsValid(participant)) {
+    stopPassWatcher();
+  } else {
+    startPassWatcher(participant);
+  }
 }
 
 function renderAll() {
@@ -665,12 +835,17 @@ function renderCheckinResult() {
   elements.checkinName.textContent = participant.fullName;
   elements.checkinCode.textContent = participant.code;
   elements.checkinGuests.textContent = `${participant.guests} pessoa(s)`;
-  elements.checkinContribution.textContent = euroFormatter.format(participant.contribution);
+  elements.checkinContribution.textContent = euroFormatter.format(participant.agreedAmount || participant.contribution);
   elements.checkinPaymentStatus.textContent = participant.paymentStatus;
   elements.checkinContact.textContent = [participant.phone, participant.email].filter(Boolean).join(" · ") || "-";
   elements.checkinTime.textContent = formatDateTime(participant.checkedInAt);
-  elements.confirmCheckin.disabled = confirmed;
-  elements.confirmCheckin.textContent = confirmed ? "Entrada confirmada" : "Confirmar entrada";
+  const valid = participantIsValid(participant);
+  elements.confirmCheckin.disabled = confirmed || !valid;
+  elements.confirmCheckin.textContent = confirmed
+    ? "Entrada confirmada"
+    : valid
+      ? "Confirmar entrada"
+      : "Aguardando validação";
   elements.undoCheckin.disabled = !confirmed;
 }
 
@@ -828,15 +1003,27 @@ elements.adminLogoutButton.addEventListener("click", async () => {
 elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const formData = new FormData(elements.form);
+  const email = safeTrim(formData.get("email"));
+  const confirmEmail = safeTrim(formData.get("confirmEmail"));
+
+  if (email && confirmEmail && email.toLowerCase() !== confirmEmail.toLowerCase()) {
+    elements.formStatus.textContent = "Email e confirmação de email não coincidem.";
+    return;
+  }
+
   const participant = normalizeParticipant({
     code: makeCode(),
+    activityName: formData.get("activityName"),
     fullName: formData.get("fullName"),
     phone: formData.get("phone"),
-    email: formData.get("email"),
+    email,
+    confirmEmail,
     city: formData.get("city"),
     guests: formData.get("guests"),
     contribution: formData.get("contribution"),
-    paymentStatus: formData.get("paymentStatus"),
+    agreedAmount: formData.get("contribution"),
+    amountConfirmed: false,
+    paymentStatus: "Aguardando confirmação do organizador",
     note: formData.get("note"),
   });
 
@@ -857,6 +1044,7 @@ elements.form.addEventListener("submit", async (event) => {
   elements.form.reset();
   elements.form.elements.guests.value = "1";
   elements.form.elements.contribution.value = "10";
+  elements.form.elements.paymentStatus.value = "Aguardando confirmação do organizador";
   elements.formStatus.textContent = "Passe criado com sucesso.";
   submitButton.disabled = false;
 });
@@ -896,6 +1084,40 @@ elements.checkinMatchList.addEventListener("click", (event) => {
   if (participant) {
     selectCheckinParticipant(participant);
     elements.checkinStatus.textContent = "Participante selecionado.";
+  }
+});
+
+elements.participantsBody.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-confirm-code]");
+  if (!button) {
+    return;
+  }
+
+  if (!state.isAdmin) {
+    openAdminDialog();
+    return;
+  }
+
+  const code = button.dataset.confirmCode;
+  const amountInput = elements.participantsBody.querySelector(`input[data-amount-for="${code}"]`);
+  const agreedAmount = Math.max(0, Number.parseFloat(amountInput?.value || "0") || 0);
+  const participant = state.participants.find((item) => item.code === code);
+
+  if (!participant) {
+    elements.formStatus.textContent = "Participante não encontrado para confirmar.";
+    return;
+  }
+
+  try {
+    button.disabled = true;
+    const updated = await confirmPayment(participant, agreedAmount);
+    updateParticipant(updated);
+    renderAll();
+    elements.formStatus.textContent = `Montante confirmado para ${updated.fullName}. Passe válido.`;
+  } catch (error) {
+    elements.formStatus.textContent = error.message || "Não foi possível confirmar o montante.";
+  } finally {
+    button.disabled = false;
   }
 });
 
@@ -999,7 +1221,7 @@ async function initializeApp() {
   loadLocalParticipants();
   renderAll();
   setAdminState(false);
-  openPassFromQuery();
+  await openPassFromQuery();
   await checkAdminSession();
 
   if (state.isAdmin) {

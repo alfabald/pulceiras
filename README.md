@@ -1,16 +1,20 @@
-# Passe Solidário Gabú Hamburg
+# Passe de Atividades Solidárias
 
-Primeira versão do projeto para substituir pulseiras físicas por passes digitais.
+Sistema para substituir pulseiras físicas por passes digitais com QR e confirmação por organizador.
 
 ## O que já faz
 
-- Cria inscrições para o piquenique.
+- Cria inscrições para qualquer atividade/evento.
 - Gera um código único para cada participante.
 - Mostra um passe digital que pode ser copiado, enviado por WhatsApp ou impresso.
+- O passe fica pendente até o organizador confirmar o montante acordado.
+- O QR pode ser validado publicamente por comissão no dia da atividade.
+- Quando o passe está aberto, o sistema verifica periodicamente e notifica quando for validado.
 - Confirma a entrada dos participantes no dia do evento.
 - Protege as áreas `Entrada` e `Participantes` com acesso de organizador.
 - Guarda os dados no navegador quando aberto diretamente.
-- Inclui uma API simples em PHP para guardar os participantes em `data/participants.json`.
+- Inclui API em PHP com fallback para `data/participants.json`.
+- Suporta PostgreSQL por `DATABASE_URL` e Supabase por variáveis dedicadas.
 - Permite exportar a lista em CSV.
 
 ## Como usar agora
@@ -59,6 +63,16 @@ Para não perder dados em reinício/deploy:
 Quando estas variáveis existem, a API passa a guardar os participantes no Supabase automaticamente.
 Se não existirem, continua a usar `data/participants.json`.
 
+## Persistência com PostgreSQL (recomendado)
+
+Define estas variáveis de ambiente no servidor:
+
+- `DATABASE_URL` (string de conexão PostgreSQL)
+- `POSTGRES_TABLE` (opcional, padrão: `participants_store`)
+
+Quando `DATABASE_URL` estiver configurado, a API usa PostgreSQL automaticamente.
+Se falhar, cai para Supabase (se configurado) e depois para JSON local.
+
 ## Acesso de organizador
 
 A senha inicial para testar é:
@@ -71,6 +85,14 @@ Usa o botão `Organizador` para ver as abas `Entrada` e `Participantes`.
 
 Antes de partilhar o projeto com outras pessoas, troca a senha em `api/config.php`.
 
+## Validade do passe e confirmação
+
+1. Participante cria o passe (status pendente).
+2. Organizador entra na aba `Participantes`.
+3. Organizador ajusta e confirma o montante acordado.
+4. Passe passa para status válido.
+5. Comissão pode escanear QR no dia e validar status.
+
 ## Como confirmar entrada
 
 1. Abre a aba `Entrada`.
@@ -79,6 +101,12 @@ Antes de partilhar o projeto com outras pessoas, troca a senha em `api/config.ph
 4. Clica em `Confirmar entrada`.
 
 Se estiveres a usar pelo XAMPP, a confirmação fica guardada em `data/participants.json`.
+
+## Endpoint público de validação de QR
+
+`GET api/pass.php?code=CODIGO_DO_PASSE`
+
+Retorna os dados mínimos do passe e o campo `amountConfirmed`, usado para validar se está apto para entrada.
 
 ## Próximos passos sugeridos
 

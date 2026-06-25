@@ -22,6 +22,7 @@ if (!verify_admin_pin($pin)) {
 }
 
 start_admin_session();
+session_regenerate_id(true);
 $_SESSION['is_admin'] = true;
 
 json_response([

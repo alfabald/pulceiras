@@ -3,7 +3,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Passe Solidário Gabú Hamburg</title>
+    <title>Passe de Atividades Solidárias</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/styles.css">
   </head>
   <body>
@@ -12,8 +15,8 @@
         <div class="brand">
           <div class="brand-mark" aria-hidden="true"> GH</div>
           <div>
-            <h1>Passe Solidário Gabú Hamburg</h1>
-            <p>Piquenique dos filhos e amigos de Gabú</p>
+            <h1>Passe de Atividades Solidárias</h1>
+            <p>Sistema reutilizável para qualquer atividade, evento ou comissão</p>
           </div>
         </div>
 
@@ -36,15 +39,15 @@
         <section class="summary-strip" aria-label="Resumo do evento">
           <div>
             <span>Objetivo</span>
-            <strong>Apoiar a população de Gabú</strong>
+            <strong>Gestão de entrada com confirmação prévia</strong>
           </div>
           <div>
-            <span>Local</span>
-            <strong>Hamburg</strong>
+            <span>Modelo</span>
+            <strong>Multiatividade e multi-organização</strong>
           </div>
           <div>
-            <span>Formato</span>
-            <strong>Passe digital sem pulseiras</strong>
+            <span>Contacto</span>
+            <strong>Fale comigo para ativar no seu evento</strong>
           </div>
         </section>
 
@@ -68,8 +71,18 @@
                 </label>
 
                 <label>
+                  <span>Nome da atividade</span>
+                  <input name="activityName" type="text" required placeholder="Ex.: Torneio solidário, workshop, piquenique">
+                </label>
+
+                <label>
                   <span>Email</span>
                   <input name="email" type="email" autocomplete="email" placeholder="opcional">
+                </label>
+
+                <label>
+                  <span>Confirmar email</span>
+                  <input name="confirmEmail" type="email" autocomplete="email" placeholder="repete o email">
                 </label>
 
                 <label>
@@ -90,9 +103,8 @@
                 <label>
                   <span>Estado da contribuição</span>
                   <select name="paymentStatus">
-                    <option value="Prometido">Prometido</option>
-                    <option value="Recebido em dinheiro">Recebido em dinheiro</option>
-                    <option value="Transferência confirmada">Transferência confirmada</option>
+                    <option value="Aguardando confirmação do organizador">Aguardando confirmação do organizador</option>
+                    <option value="Confirmado pelo organizador">Confirmado pelo organizador</option>
                   </select>
                 </label>
 
@@ -153,9 +165,9 @@
               <div class="pass-head">
                 <div>
                   <p>Passe Solidário</p>
-                  <h2 id="passTitle">Gabú Hamburg</h2>
+                  <h2 id="passTitle">Passe de atividade</h2>
                 </div>
-                <span id="passStatus">Válido</span>
+                <span id="passStatus">Pendente</span>
               </div>
 
               <div class="pass-body"> 
@@ -170,11 +182,14 @@
 
                   <span>Contribuição</span>
                   <strong id="passContribution">-</strong>
+
+                  <span>Atividade</span>
+                  <strong id="passActivity">-</strong>
                 </div>
               </div>
 
               <div class="pass-foot">
-                <p id="passMeta">Piquenique solidário em Hamburg</p>
+                <p id="passMeta">Aguardando confirmação do organizador</p>
                 <div class="button-row">
                   <button type="button" class="secondary-action" id="copyPass">Copiar</button>
                   <button type="button" class="secondary-action" id="sharePass">WhatsApp</button>
@@ -319,12 +334,15 @@
                 <thead>
                   <tr>
                     <th>Código</th>
+                    <th>Atividade</th>
                     <th>Nome</th>
                     <th>Pessoas</th>
                     <th>Contribuição</th>
+                    <th>Validade</th>
                     <th>Estado</th>
                     <th>Entrada</th>
                     <th>Contacto</th>
+                    <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody id="participantsBody"></tbody>

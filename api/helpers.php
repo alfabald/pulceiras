@@ -8,6 +8,9 @@ function json_response(array $payload, int $status = 200): void
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: no-referrer');
+    header('Permissions-Policy: geolocation=(), microphone=(), camera=()');
     header('Cache-Control: no-store, max-age=0');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
@@ -61,6 +64,259 @@ function env_string(string $name, string $default = ''): string
     }
 
     return trim((string) $value);
+}
+
+function bool_value(mixed $value): bool
+{
+    if (is_bool($value)) {
+        return $value;
+    }
+
+    if (is_numeric($value)) {
+        return (int) $value === 1;
+    }
+
+    $normalized = strtolower(trim((string) $value));
+    return in_array($normalized, ['1', 'true', 'yes', 'sim', 'confirmado'], true);
+}
+
+function normalize_timestamp(mixed $value): string
+{
+    $text = clean_text($value, 80);
+    if ($text === '') {
+        return '';
+    }
+
+    $timestamp = strtotime($text);
+    if ($timestamp === false) {
+        return '';
+    }
+
+    return date(DATE_ATOM, $timestamp);
+}
+
+function normalize_participant(array $input): array
+{
+    $code = clean_text($input['code'] ?? '', 40);
+    if ($code === '') {
+        $code = make_code();
+    }
+
+    $contribution = normalize_amount($input['contribution'] ?? 0);
+    $agreedAmountRaw = array_key_exists('agreedAmount', $input)
+        ? $input['agreedAmount']
+        : ($input['contribution'] ?? 0);
+    $agreedAmount = normalize_amount($agreedAmountRaw);
+    $amountConfirmed = bool_value($input['amountConfirmed'] ?? false);
+    $amountConfirmedAt = $amountConfirmed
+        ? (normalize_timestamp($input['amountConfirmedAt'] ?? '') ?: date(DATE_ATOM))
+        : '';
+    $checkedInAt = normalize_timestamp($input['checkedInAt'] ?? '');
+    $createdAt = normalize_timestamp($input['createdAt'] ?? '') ?: date(DATE_ATOM);
+    $updatedAt = date(DATE_ATOM);
+
+    return [
+        'code' => $code,
+        'fullName' => clean_text($input['fullName'] ?? '', 120),
+        'phone' => clean_text($input['phone'] ?? '', 80),
+        'email' => clean_text($input['email'] ?? '', 120),
+        'city' => clean_text($input['city'] ?? '', 100),
+        'activityName' => clean_text($input['activityName'] ?? 'Atividade geral', 120),
+        'guests' => max(1, min(50, (int) ($input['guests'] ?? 1))),
+        'contribution' => $contribution,
+        'agreedAmount' => $agreedAmount,
+        'amountConfirmed' => $amountConfirmed,
+        'amountConfirmedAt' => $amountConfirmedAt,
+        'paymentStatus' => clean_text(
+            $input['paymentStatus'] ?? ($amountConfirmed ? 'Confirmado pelo organizador' : 'Aguardando confirmação do organizador'),
+            90
+        ),
+        'note' => clean_text($input['note'] ?? '', 500),
+        'checkedInAt' => $checkedInAt,
+        'createdAt' => $createdAt,
+        'updatedAt' => $updatedAt,
+    ];
+}
+
+function participants_sorted(array $participants): array
+{
+    usort($participants, static function (array $a, array $b): int {
+        return strcmp((string) ($b['createdAt'] ?? ''), (string) ($a['createdAt'] ?? ''));
+    });
+
+    return $participants;
+}
+
+function postgres_enabled(): bool
+{
+    return env_string('DATABASE_URL') !== '';
+}
+
+function postgres_table(): string
+{
+    $table = env_string('POSTGRES_TABLE', 'participants_store');
+    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $table)) {
+        return 'participants_store';
+    }
+
+    return $table;
+}
+
+function postgres_connection(): ?PDO
+{
+    static $pdo = null;
+    static $attempted = false;
+
+    if ($attempted) {
+        return $pdo;
+    }
+
+    $attempted = true;
+    $url = env_string('DATABASE_URL');
+    if ($url === '') {
+        return null;
+    }
+
+    $parts = parse_url($url);
+    if (!is_array($parts)) {
+        return null;
+    }
+
+    $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+    if ($scheme !== 'postgres' && $scheme !== 'postgresql') {
+        return null;
+    }
+
+    $host = (string) ($parts['host'] ?? 'localhost');
+    $port = (int) ($parts['port'] ?? 5432);
+    $dbname = ltrim((string) ($parts['path'] ?? ''), '/');
+    $user = (string) ($parts['user'] ?? '');
+    $pass = (string) ($parts['pass'] ?? '');
+
+    if ($dbname === '') {
+        return null;
+    }
+
+    $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s;sslmode=require', $host, $port, $dbname);
+
+    try {
+        $pdo = new PDO($dsn, $user, $pass, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]);
+    } catch (Throwable) {
+        $pdo = null;
+    }
+
+    return $pdo;
+}
+
+function ensure_postgres_schema(PDO $pdo): void
+{
+    $table = postgres_table();
+    $sql = sprintf(
+        'create table if not exists %s (
+            code text primary key,
+            payload jsonb not null,
+            updated_at timestamptz not null default now()
+        )',
+        $table
+    );
+    $pdo->exec($sql);
+}
+
+function read_participants_postgres(): ?array
+{
+    $pdo = postgres_connection();
+    if (!$pdo) {
+        return null;
+    }
+
+    try {
+        ensure_postgres_schema($pdo);
+        $table = postgres_table();
+        $stmt = $pdo->query(sprintf('select payload from %s order by updated_at desc', $table));
+        $rows = $stmt ? $stmt->fetchAll() : [];
+    } catch (Throwable) {
+        return null;
+    }
+
+    $participants = [];
+    foreach ($rows as $row) {
+        $payload = $row['payload'] ?? null;
+        if (is_string($payload)) {
+            $decoded = json_decode($payload, true);
+            if (is_array($decoded)) {
+                $payload = $decoded;
+            }
+        }
+
+        if (is_array($payload)) {
+            $participants[] = normalize_participant($payload);
+        }
+    }
+
+    return participants_sorted($participants);
+}
+
+function write_participants_postgres(array $participants): bool
+{
+    $pdo = postgres_connection();
+    if (!$pdo) {
+        return false;
+    }
+
+    try {
+        ensure_postgres_schema($pdo);
+        $table = postgres_table();
+
+        $records = [];
+        foreach ($participants as $participant) {
+            if (!is_array($participant)) {
+                continue;
+            }
+
+            $normalized = normalize_participant($participant);
+            $records[$normalized['code']] = $normalized;
+        }
+
+        $pdo->beginTransaction();
+
+        if (count($records) === 0) {
+            $pdo->exec(sprintf('delete from %s', $table));
+            $pdo->commit();
+            return true;
+        }
+
+        $codes = array_keys($records);
+        $placeholders = implode(',', array_fill(0, count($codes), '?'));
+        $deleteStmt = $pdo->prepare(sprintf('delete from %s where code not in (%s)', $table, $placeholders));
+        $deleteStmt->execute($codes);
+
+        $upsertSql = sprintf(
+            'insert into %s (code, payload, updated_at)
+             values (:code, :payload::jsonb, now())
+             on conflict (code) do update set payload = excluded.payload, updated_at = now()',
+            $table
+        );
+        $upsertStmt = $pdo->prepare($upsertSql);
+
+        foreach ($records as $code => $participant) {
+            $upsertStmt->execute([
+                ':code' => $code,
+                ':payload' => json_encode($participant, JSON_UNESCAPED_UNICODE),
+            ]);
+        }
+
+        $pdo->commit();
+        return true;
+    } catch (Throwable) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        return false;
+    }
 }
 
 function supabase_enabled(): bool
@@ -156,11 +412,7 @@ function read_participants_supabase(): ?array
         }
     }
 
-    usort($participants, static function (array $a, array $b): int {
-        return strcmp((string) ($a['createdAt'] ?? ''), (string) ($b['createdAt'] ?? ''));
-    });
-
-    return $participants;
+    return participants_sorted(array_map('normalize_participant', $participants));
 }
 
 function write_participants_supabase(array $participants): bool
@@ -180,7 +432,7 @@ function write_participants_supabase(array $participants): bool
 
         $records[] = [
             'code' => $code,
-            'payload' => $participant,
+            'payload' => normalize_participant($participant),
         ];
     }
 
@@ -219,6 +471,13 @@ function data_file(): string
 
 function read_participants(): array
 {
+    if (postgres_enabled()) {
+        $postgresParticipants = read_participants_postgres();
+        if (is_array($postgresParticipants)) {
+            return $postgresParticipants;
+        }
+    }
+
     if (supabase_enabled()) {
         $supabaseParticipants = read_participants_supabase();
         if (is_array($supabaseParticipants)) {
@@ -229,11 +488,31 @@ function read_participants(): array
     $contents = file_get_contents(data_file());
     $participants = json_decode($contents ?: '[]', true);
 
-    return is_array($participants) ? $participants : [];
+    if (!is_array($participants)) {
+        return [];
+    }
+
+    return participants_sorted(array_map('normalize_participant', $participants));
 }
 
 function write_participants(array $participants): void
 {
+    $normalized = [];
+    foreach ($participants as $participant) {
+        if (!is_array($participant)) {
+            continue;
+        }
+
+        $item = normalize_participant($participant);
+        $normalized[$item['code']] = $item;
+    }
+
+    $participants = participants_sorted(array_values($normalized));
+
+    if (postgres_enabled() && write_participants_postgres($participants)) {
+        return;
+    }
+
     if (supabase_enabled() && write_participants_supabase($participants)) {
         return;
     }
@@ -271,6 +550,18 @@ function start_admin_session(): void
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
+
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (($_SERVER['SERVER_PORT'] ?? '') === '443');
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => $isHttps,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
 
     session_name('gabu_pass_admin');
     session_start();

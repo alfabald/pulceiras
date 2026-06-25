@@ -8,20 +8,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_admin();
-check_rate_limit('checkin:' . ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'), 40, 60);
+check_rate_limit('confirm:' . ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'), 30, 60);
 
 $input = validate_json_request();
 $code = clean_text($input['code'] ?? '', 40);
 
 if ($code === '') {
     json_response(['error' => 'Código obrigatório.'], 422);
-}
-
-$checkedInAt = clean_text($input['checkedInAt'] ?? '', 80);
-
-if ($checkedInAt !== '') {
-    $timestamp = strtotime($checkedInAt);
-    $checkedInAt = $timestamp === false ? date(DATE_ATOM) : date(DATE_ATOM, $timestamp);
 }
 
 $participants = read_participants();
@@ -38,14 +31,15 @@ if ($foundIndex === null) {
     json_response(['error' => 'Participante não encontrado.'], 404);
 }
 
-$isTryingCheckin = $checkedInAt !== '';
-if ($isTryingCheckin && !bool_value($participants[$foundIndex]['amountConfirmed'] ?? false)) {
-    json_response(['error' => 'Passe ainda não válido. Confirma o montante com o organizador primeiro.'], 422);
-}
-
-$participants[$foundIndex]['checkedInAt'] = $checkedInAt;
+$amount = normalize_amount($input['agreedAmount'] ?? ($participants[$foundIndex]['agreedAmount'] ?? 0));
+$participants[$foundIndex]['agreedAmount'] = $amount;
+$participants[$foundIndex]['contribution'] = $amount;
+$participants[$foundIndex]['amountConfirmed'] = true;
+$participants[$foundIndex]['amountConfirmedAt'] = date(DATE_ATOM);
+$participants[$foundIndex]['paymentStatus'] = 'Confirmado pelo organizador';
 $participants[$foundIndex]['updatedAt'] = date(DATE_ATOM);
 
+$participants[$foundIndex] = normalize_participant($participants[$foundIndex]);
 write_participants($participants);
 
 json_response([

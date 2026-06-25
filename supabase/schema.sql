@@ -1,8 +1,12 @@
 create table if not exists public.participants_store (
   code text primary key,
   payload jsonb not null,
+  amount_confirmed boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+create index if not exists idx_participants_store_amount_confirmed
+  on public.participants_store (amount_confirmed);
 
 create or replace function public.set_updated_at()
 returns trigger
