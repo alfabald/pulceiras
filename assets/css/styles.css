@@ -1020,6 +1020,49 @@ td {
   gap: 10px;
 }
 
+.participants-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.participants-summary div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fbfdf9;
+  display: grid;
+  gap: 4px;
+}
+
+.participants-summary span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.participants-summary strong {
+  font-size: 1rem;
+}
+
+.organizers-monitor-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.organizer-monitor-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fbfdf9;
+}
+
+.organizer-monitor-stats {
+  margin-top: 2px;
+}
+
 .organizer-invite {
   display: grid;
   gap: 8px;

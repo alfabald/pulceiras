@@ -3,7 +3,7 @@ param(
   [string]$BaseUrl,
 
   [string]$OwnerUsername = "dono.gabu",
-  [string]$OwnerName = "Dono do Sistema",
+  [string]$OwnerName = "Admin Principal",
   [string]$OwnerPin = "Dono2026"
 )
 

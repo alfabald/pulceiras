@@ -28,7 +28,18 @@ if (!$participant) {
     json_response(['error' => 'Passe não encontrado.'], 404);
 }
 
+$eventConfig = read_event_config();
+$eventName = clean_text($eventConfig['eventName'] ?? 'Evento', 160);
+$isValid = bool_value($participant['amountConfirmed'] ?? false);
+
 json_response([
+    'eventName' => $eventName,
+    'validation' => [
+        'isValid' => $isValid,
+        'message' => $isValid
+            ? 'QR válido para o evento configurado.'
+            : 'QR inválido: passe ainda não foi validado pelo organizador.',
+    ],
     'participant' => [
         'code' => $participant['code'],
         'fullName' => $participant['fullName'],

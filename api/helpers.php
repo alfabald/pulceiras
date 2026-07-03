@@ -787,6 +787,24 @@ function normalize_organizer_activities(mixed $value): array
     return parse_allowed_activities($value);
 }
 
+function normalize_organizer_activity_profile(mixed $value): array
+{
+    if (!is_array($value)) {
+        $value = [];
+    }
+
+    return [
+        'title' => clean_text($value['title'] ?? '', 140),
+        'description' => clean_text($value['description'] ?? '', 2500),
+        'date' => clean_text($value['date'] ?? '', 20),
+        'location' => clean_text($value['location'] ?? '', 160),
+        'startTime' => clean_text($value['startTime'] ?? '', 20),
+        'endTime' => clean_text($value['endTime'] ?? '', 20),
+        'flyerUrl' => clean_text($value['flyerUrl'] ?? '', 500),
+        'flyerImage' => clean_text($value['flyerImage'] ?? '', 400000),
+    ];
+}
+
 function organizer_pin_max_age_days(): int
 {
     $raw = clean_text(env_string('ORGANIZER_PIN_MAX_AGE_DAYS', '90'), 10);
@@ -861,6 +879,7 @@ function read_organizers(): array
             'phone' => clean_text($item['phone'] ?? '', 80),
             'role' => $role,
             'allowedActivities' => $activities,
+            'activityProfile' => normalize_organizer_activity_profile($item['activityProfile'] ?? []),
             'active' => bool_value($item['active'] ?? true),
             'mustChangePassword' => bool_value($item['mustChangePassword'] ?? false),
             'pinHash' => $pinHash,
@@ -902,6 +921,7 @@ function public_organizer_profile(array $organizer): array
         'phone' => clean_text($organizer['phone'] ?? '', 80),
         'role' => normalize_organizer_role($organizer['role'] ?? 'viewer'),
         'allowedActivities' => normalize_organizer_activities($organizer['allowedActivities'] ?? []),
+        'activityProfile' => normalize_organizer_activity_profile($organizer['activityProfile'] ?? []),
         'active' => bool_value($organizer['active'] ?? true),
         'mustChangePassword' => bool_value($organizer['mustChangePassword'] ?? false),
         'pinChangedAt' => normalize_timestamp($organizer['pinChangedAt'] ?? '') ?: date(DATE_ATOM),

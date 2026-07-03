@@ -16,15 +16,17 @@
           <div class="brand-mark" aria-hidden="true"> GH</div>
           <div>
             <h1>Passe de Atividades Solidárias</h1>
-            <p>Sistema reutilizável para qualquer atividade, evento ou comissão</p>
+            <p>Plataforma de gestão de inscrições, validação de pagamentos e controlo de entrada com QR por atividade</p>
           </div>
         </div>
 
         <nav class="tabs" aria-label="Áreas do passe solidário">
           <button class="tab is-active" type="button" data-view="register">Inscrição</button>
           <button class="tab" type="button" data-view="pass">Confirmados</button>
+          <button class="tab" type="button" data-view="activity" data-admin-only hidden>Minha atividade</button>
           <button class="tab" type="button" data-view="checkin" data-admin-only hidden>Entrada</button>
           <button class="tab" type="button" data-view="participants" data-admin-only hidden>Participantes</button>
+          <button class="tab" type="button" data-view="organizers" data-admin-only hidden>Organizadores</button>
           <button class="tab" type="button" data-view="transparency" data-admin-only hidden>Transparência</button>
         </nav>
 
@@ -369,6 +371,53 @@
           </div>
         </section>
 
+        <section class="view" id="activity" aria-labelledby="activityTitle">
+          <div class="panel activity-panel">
+            <div class="section-title">
+              <p>Gestão da tua atividade</p>
+              <h2 id="activityTitle">Minha atividade</h2>
+            </div>
+
+            <form id="activityProfileForm" class="organizer-form">
+              <label class="span-2">
+                <span>Título da atividade</span>
+                <input id="activityTitleInput" type="text" maxlength="140" placeholder="Ex.: Concerto Solidário de Verão">
+              </label>
+              <label class="span-2">
+                <span>Descrição</span>
+                <textarea id="activityDescriptionInput" rows="5" maxlength="2500" placeholder="Descreve a atividade, objetivo e instruções importantes..."></textarea>
+              </label>
+              <label>
+                <span>Data</span>
+                <input id="activityDateInput" type="date">
+              </label>
+              <label>
+                <span>Local</span>
+                <input id="activityLocationInput" type="text" maxlength="160" placeholder="Ex.: Hamburg, Centro Comunitário">
+              </label>
+              <label>
+                <span>Hora início</span>
+                <input id="activityStartTimeInput" type="time">
+              </label>
+              <label>
+                <span>Hora fim</span>
+                <input id="activityEndTimeInput" type="time">
+              </label>
+              <label class="span-2">
+                <span>Link do flyer (opcional)</span>
+                <input id="activityFlyerUrlInput" type="url" maxlength="500" placeholder="https://...">
+              </label>
+              <label class="span-2">
+                <span>Flyer em imagem (opcional)</span>
+                <input id="activityFlyerImageInput" type="file" accept="image/*">
+              </label>
+              <button type="submit" class="secondary-action">Guardar atividade</button>
+            </form>
+
+            <p class="form-status" id="activityProfileStatus" role="status" aria-live="polite"></p>
+          </div>
+        </section>
+
         <section class="view" id="participants" aria-labelledby="participantsTitle">
           <div class="panel table-panel">
             <div class="table-tools">
@@ -382,6 +431,21 @@
                 <button type="button" class="secondary-action" id="exportCsv">Exportar CSV</button>
                 <button type="button" class="secondary-action" id="exportAdvancedCsv">Exportar por atividade</button>
                 <button type="button" class="danger-action" id="clearLocal">Limpar local</button>
+              </div>
+
+              <div class="participants-summary" id="participantsSummary">
+                <div>
+                  <span>Total visível</span>
+                  <strong id="participantsVisibleCount">0</strong>
+                </div>
+                <div>
+                  <span>Pendentes</span>
+                  <strong id="participantsPendingCount">0</strong>
+                </div>
+                <div>
+                  <span>Confirmados</span>
+                  <strong id="participantsConfirmedCount">0</strong>
+                </div>
               </div>
             </div>
 
@@ -486,6 +550,38 @@
                 <p class="empty-state">Sem organizadores criados ainda.</p>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section class="view" id="organizers" aria-labelledby="organizersMonitorTitle">
+          <div class="panel organizers-monitor-panel">
+            <div class="section-title">
+              <p>Monitorização do dono</p>
+              <h2 id="organizersMonitorTitle">Organizadores e atividades</h2>
+            </div>
+
+            <div class="participants-summary">
+              <div>
+                <span>Organizadores</span>
+                <strong id="organizersMonitorCount">0</strong>
+              </div>
+              <div>
+                <span>Ativos</span>
+                <strong id="organizersActiveCount">0</strong>
+              </div>
+              <div>
+                <span>Pendentes (total)</span>
+                <strong id="organizersPendingTotal">0</strong>
+              </div>
+              <div>
+                <span>Confirmados (total)</span>
+                <strong id="organizersConfirmedTotal">0</strong>
+              </div>
+            </div>
+
+            <div id="organizersMonitorList" class="organizers-monitor-list">
+              <p class="empty-state">Sem dados de organizadores para monitorizar.</p>
+            </div>
           </div>
         </section>
       </main>

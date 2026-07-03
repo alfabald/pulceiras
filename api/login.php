@@ -49,7 +49,7 @@ $_SESSION['organizerUsername'] = count($account) > 0
     : ($role === 'admin' ? owner_username() : '');
 $_SESSION['organizerName'] = count($account) > 0
     ? clean_text($account['organizerName'] ?? '', 120)
-    : ($role === 'admin' ? 'Dono principal' : '');
+    : ($role === 'admin' ? 'Admin Principal' : '');
 $_SESSION['requiresPinChange'] = count($account) > 0
     ? bool_value($account['requiresPinChange'] ?? false)
     : false;

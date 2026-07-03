@@ -6,7 +6,7 @@ param(
   [switch]$RunSetup,
   [string]$BaseUrl = "",
   [string]$OwnerUsername = "dono.novo",
-  [string]$OwnerName = "Dono Nova Instancia",
+  [string]$OwnerName = "Admin Principal",
   [string]$OwnerPin = "Dono2026"
 )
 

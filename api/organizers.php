@@ -68,6 +68,7 @@ if ($action === 'create') {
         'phone' => $phone,
         'role' => $role,
         'allowedActivities' => $activities,
+        'activityProfile' => normalize_organizer_activity_profile($input['activityProfile'] ?? []),
         'active' => true,
         'mustChangePassword' => true,
         'pinHash' => hash_organizer_pin($pin),
@@ -113,6 +114,9 @@ if ($action === 'update') {
         $organizers[$index]['role'] = normalize_organizer_role($input['role'] ?? ($item['role'] ?? 'viewer'));
         if (array_key_exists('allowedActivities', $input)) {
             $organizers[$index]['allowedActivities'] = normalize_organizer_activities($input['allowedActivities']);
+        }
+        if (array_key_exists('activityProfile', $input)) {
+            $organizers[$index]['activityProfile'] = normalize_organizer_activity_profile($input['activityProfile']);
         }
         if (array_key_exists('active', $input)) {
             $organizers[$index]['active'] = bool_value($input['active']);

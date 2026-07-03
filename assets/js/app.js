@@ -11,6 +11,7 @@ const API_LOGOUT = "api/logout.php";
 const API_SESSION = "api/session.php";
 const API_EVENT_CONFIG = "api/event-config.php";
 const API_ORGANIZERS = "api/organizers.php";
+const API_ORGANIZER_ACTIVITY = "api/organizer-activity.php";
 const API_CHANGE_PIN = "api/change-pin.php";
 const LOCAL_ADMIN_PIN = "gabu2026";
 const CHECKIN_QUEUE_KEY = "gabuCheckinQueueV1";
@@ -27,6 +28,16 @@ const state = {
   organizerUsername: "",
   isOwner: false,
   organizers: [],
+  ownActivityProfile: {
+    title: "",
+    description: "",
+    date: "",
+    location: "",
+    startTime: "",
+    endTime: "",
+    flyerUrl: "",
+    flyerImage: "",
+  },
   organizerInvite: null,
   requiresPinChange: false,
   passPollingTimer: null,
@@ -86,9 +97,22 @@ const elements = {
   teamsInput: document.querySelector("#teamsInput"),
   saveEventConfigBtn: document.querySelector("#saveEventConfigBtn"),
   contributionHint: document.querySelector("#contributionHint"),
+  activityProfileForm: document.querySelector("#activityProfileForm"),
+  activityTitleInput: document.querySelector("#activityTitleInput"),
+  activityDescriptionInput: document.querySelector("#activityDescriptionInput"),
+  activityDateInput: document.querySelector("#activityDateInput"),
+  activityLocationInput: document.querySelector("#activityLocationInput"),
+  activityStartTimeInput: document.querySelector("#activityStartTimeInput"),
+  activityEndTimeInput: document.querySelector("#activityEndTimeInput"),
+  activityFlyerUrlInput: document.querySelector("#activityFlyerUrlInput"),
+  activityFlyerImageInput: document.querySelector("#activityFlyerImageInput"),
+  activityProfileStatus: document.querySelector("#activityProfileStatus"),
   participantsBody: document.querySelector("#participantsBody"),
   emptyTable: document.querySelector("#emptyTable"),
   participantSearch: document.querySelector("#participantSearch"),
+  participantsVisibleCount: document.querySelector("#participantsVisibleCount"),
+  participantsPendingCount: document.querySelector("#participantsPendingCount"),
+  participantsConfirmedCount: document.querySelector("#participantsConfirmedCount"),
   exportCsv: document.querySelector("#exportCsv"),
   exportAdvancedCsv: document.querySelector("#exportAdvancedCsv"),
   clearLocal: document.querySelector("#clearLocal"),
@@ -138,6 +162,11 @@ const elements = {
   sendInviteWhatsapp: document.querySelector("#sendInviteWhatsapp"),
   sendInviteEmail: document.querySelector("#sendInviteEmail"),
   organizersList: document.querySelector("#organizersList"),
+  organizersMonitorCount: document.querySelector("#organizersMonitorCount"),
+  organizersActiveCount: document.querySelector("#organizersActiveCount"),
+  organizersPendingTotal: document.querySelector("#organizersPendingTotal"),
+  organizersConfirmedTotal: document.querySelector("#organizersConfirmedTotal"),
+  organizersMonitorList: document.querySelector("#organizersMonitorList"),
   adminStatusLabel: document.querySelector("#adminStatusLabel"),
   adminScopeLabel: document.querySelector("#adminScopeLabel"),
   adminLoginButton: document.querySelector("#adminLoginButton"),
@@ -500,9 +529,6 @@ async function saveEventConfig() {
 }
 
 function renderEventConfigInputs() {
-  if (elements.brandTitle && state.eventConfig.eventName) {
-    elements.brandTitle.textContent = state.eventConfig.eventName;
-  }
   if (elements.eventNameInput) elements.eventNameInput.value = state.eventConfig.eventName || "";
   if (elements.eventDateInput) elements.eventDateInput.value = state.eventConfig.eventDate || "";
   if (elements.eventLocationInput) elements.eventLocationInput.value = state.eventConfig.eventLocation || "";
@@ -510,11 +536,39 @@ function renderEventConfigInputs() {
   if (elements.teamsInput) elements.teamsInput.value = (state.eventConfig.teams || []).join(", ");
 }
 
+function normalizeActivityProfile(profile) {
+  return {
+    title: safeTrim(profile?.title),
+    description: safeTrim(profile?.description),
+    date: safeTrim(profile?.date),
+    location: safeTrim(profile?.location),
+    startTime: safeTrim(profile?.startTime),
+    endTime: safeTrim(profile?.endTime),
+    flyerUrl: safeTrim(profile?.flyerUrl),
+    flyerImage: safeTrim(profile?.flyerImage),
+  };
+}
+
+function renderOwnActivityProfile() {
+  const p = normalizeActivityProfile(state.ownActivityProfile || {});
+  if (elements.activityTitleInput) elements.activityTitleInput.value = p.title;
+  if (elements.activityDescriptionInput) elements.activityDescriptionInput.value = p.description;
+  if (elements.activityDateInput) elements.activityDateInput.value = p.date;
+  if (elements.activityLocationInput) elements.activityLocationInput.value = p.location;
+  if (elements.activityStartTimeInput) elements.activityStartTimeInput.value = p.startTime;
+  if (elements.activityEndTimeInput) elements.activityEndTimeInput.value = p.endTime;
+  if (elements.activityFlyerUrlInput) elements.activityFlyerUrlInput.value = p.flyerUrl;
+}
+
 function normalizeSearch(value) {
   return safeTrim(value)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+function activityKey(value) {
+  return normalizeSearch(value || "");
 }
 
 function makeCode() {
@@ -796,6 +850,22 @@ async function loadPublicPass(code) {
   return normalizeParticipant(data.participant);
 }
 
+async function loadPublicPassPayload(code) {
+  if (isFileMode()) {
+    return null;
+  }
+
+  const response = await fetch(`${API_PASS}?code=${encodeURIComponent(code)}`, {
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json().catch(() => null);
+}
+
 function stopPassWatcher() {
   if (state.passPollingTimer) {
     clearInterval(state.passPollingTimer);
@@ -832,7 +902,7 @@ function startPassWatcher(participant) {
 }
 
 function isAdminView(viewId) {
-  return viewId === "checkin" || viewId === "participants" || viewId === "transparency";
+  return viewId === "activity" || viewId === "checkin" || viewId === "participants" || viewId === "organizers" || viewId === "transparency";
 }
 
 function activeViewId() {
@@ -852,8 +922,14 @@ function canOpenView(viewId) {
   if (viewId === "checkin") {
     return hasPermission("confirmEntry");
   }
+  if (viewId === "activity") {
+    return hasPermission("viewParticipants") || hasPermission("manageSettings");
+  }
   if (viewId === "participants") {
     return hasPermission("viewParticipants");
+  }
+  if (viewId === "organizers") {
+    return hasPermission("manageSettings");
   }
   if (viewId === "transparency") {
     return hasPermission("viewParticipants") || hasPermission("manageSettings");
@@ -889,8 +965,18 @@ function setAdminState(isAdmin, options = {}) {
       return;
     }
 
+    if (view === "activity") {
+      tab.hidden = !(hasPermission("viewParticipants") || hasPermission("manageSettings"));
+      return;
+    }
+
     if (view === "participants") {
       tab.hidden = !canViewParticipants;
+      return;
+    }
+
+    if (view === "organizers") {
+      tab.hidden = !hasPermission("manageSettings");
       return;
     }
 
@@ -907,8 +993,9 @@ function setAdminState(isAdmin, options = {}) {
   if (elements.registerWorkGrid) {
     elements.registerWorkGrid.classList.toggle("is-single", !isAdmin);
   }
+  const statusLabel = state.isOwner ? "Admin Principal" : "Organizador";
   elements.adminStatusLabel.textContent = isAdmin
-    ? `Organizador (${state.role}${state.organizerUsername ? ` · ${state.organizerUsername}` : ""})`
+    ? `${statusLabel} (${state.role}${state.organizerUsername ? ` · ${state.organizerUsername}` : ""})`
     : "Público";
   elements.adminStatusLabel.classList.toggle("is-active", isAdmin);
 
@@ -938,6 +1025,7 @@ function setAdminState(isAdmin, options = {}) {
     state.participants = [];
     state.audit = [];
     state.organizers = [];
+    state.ownActivityProfile = normalizeActivityProfile({});
     state.currentCheckin = null;
     localStorage.removeItem(STORAGE_KEY);
     elements.checkinResult.hidden = true;
@@ -958,6 +1046,7 @@ function normalizeOrganizer(organizer) {
     allowedActivities: Array.isArray(organizer?.allowedActivities)
       ? organizer.allowedActivities.map((x) => safeTrim(x)).filter(Boolean)
       : [],
+    activityProfile: normalizeActivityProfile(organizer?.activityProfile || {}),
     active: Boolean(organizer?.active),
     mustChangePassword: Boolean(organizer?.mustChangePassword),
   };
@@ -1003,6 +1092,7 @@ async function loadOrganizers() {
   if (isFileMode() || !hasPermission("manageSettings")) {
     state.organizers = [];
     renderOrganizers();
+    renderOrganizersMonitor();
     return;
   }
 
@@ -1011,6 +1101,7 @@ async function loadOrganizers() {
     if (!response.ok) {
       state.organizers = [];
       renderOrganizers();
+      renderOrganizersMonitor();
       return;
     }
 
@@ -1019,10 +1110,60 @@ async function loadOrganizers() {
       ? data.organizers.map(normalizeOrganizer)
       : [];
     renderOrganizers();
+    renderOrganizersMonitor();
   } catch {
     state.organizers = [];
     renderOrganizers();
+    renderOrganizersMonitor();
   }
+}
+
+async function loadOwnActivityProfile() {
+  if (isFileMode() || !state.isAdmin) {
+    state.ownActivityProfile = normalizeActivityProfile({});
+    renderOwnActivityProfile();
+    return;
+  }
+
+  try {
+    const response = await fetch(API_ORGANIZER_ACTIVITY, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      renderOwnActivityProfile();
+      return;
+    }
+
+    const data = await response.json();
+    state.ownActivityProfile = normalizeActivityProfile(data.activityProfile || {});
+    renderOwnActivityProfile();
+  } catch {
+    renderOwnActivityProfile();
+  }
+}
+
+async function saveOwnActivityProfile(profile) {
+  if (isFileMode()) {
+    state.ownActivityProfile = normalizeActivityProfile(profile);
+    renderOwnActivityProfile();
+    return;
+  }
+
+  const response = await fetch(API_ORGANIZER_ACTIVITY, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ activityProfile: normalizeActivityProfile(profile) }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Falha ao guardar atividade.");
+  }
+
+  const data = await response.json().catch(() => ({}));
+  state.ownActivityProfile = normalizeActivityProfile(data.activityProfile || profile);
+  renderOwnActivityProfile();
 }
 
 async function organizerAction(action, payload = {}) {
@@ -1345,6 +1486,16 @@ function renderParticipants() {
 
   elements.participantsBody.innerHTML = "";
 
+  if (elements.participantsVisibleCount) {
+    elements.participantsVisibleCount.textContent = String(participants.length);
+  }
+  if (elements.participantsPendingCount) {
+    elements.participantsPendingCount.textContent = String(participants.filter((participant) => !participantIsValid(participant)).length);
+  }
+  if (elements.participantsConfirmedCount) {
+    elements.participantsConfirmedCount.textContent = String(participants.filter((participant) => participantIsValid(participant)).length);
+  }
+
   participants.forEach((participant) => {
     const row = document.createElement("tr");
     const valid = participantIsValid(participant);
@@ -1513,6 +1664,7 @@ function renderAll() {
   renderParticipants();
   renderAudit();
   renderOrganizers();
+  renderOrganizersMonitor();
   renderOrganizerInvite();
   renderCheckinActivityFilter();
   renderCheckinDashboard();
@@ -1605,14 +1757,14 @@ function renderOrganizers() {
     state.organizerInvite = null;
     renderOrganizerInvite();
     if (elements.organizerStatus) {
-      elements.organizerStatus.textContent = "Gestão de organizadores disponível apenas para a conta dona principal.";
+      elements.organizerStatus.textContent = "Gestão de organizadores disponível apenas para o Admin Principal.";
     }
     elements.organizersList.innerHTML = '<p class="empty-state">Esta conta não pode criar, desativar ou excluir organizadores.</p>';
     return;
   }
 
   if (elements.organizerForm) elements.organizerForm.hidden = false;
-  if (elements.organizerStatus && elements.organizerStatus.textContent.includes("conta dona principal")) {
+  if (elements.organizerStatus && elements.organizerStatus.textContent.includes("Admin Principal")) {
     elements.organizerStatus.textContent = "";
   }
 
@@ -1627,6 +1779,7 @@ function renderOrganizers() {
     const activities = org.allowedActivities.length > 0
       ? org.allowedActivities.join(", ")
       : "Todas as atividades";
+    const profile = normalizeActivityProfile(org.activityProfile || {});
     const item = document.createElement("article");
     item.className = "organizer-item";
     item.dataset.username = org.username;
@@ -1638,6 +1791,8 @@ function renderOrganizers() {
       <div class="organizer-meta">@${escapeHtml(org.username)} · perfil ${escapeHtml(org.role)} · escopo: ${escapeHtml(activities)}</div>
       ${org.email ? `<div class="organizer-meta">Email: ${escapeHtml(org.email)}</div>` : ''}
       ${org.phone ? `<div class="organizer-meta">Telefone: ${escapeHtml(org.phone)}</div>` : ''}
+      ${profile.title ? `<div class="organizer-meta">Atividade: ${escapeHtml(profile.title)}</div>` : ''}
+      ${profile.date || profile.location ? `<div class="organizer-meta">${escapeHtml([profile.date, profile.location].filter(Boolean).join(" · "))}</div>` : ''}
       ${org.mustChangePassword ? '<div class="organizer-meta">Senha pendente de troca obrigatória</div>' : ''}
       <div class="organizer-actions">
         <button type="button" class="secondary-action compact-action" data-org-invite-whatsapp="${escapeHtml(org.username)}">Convite WhatsApp</button>
@@ -1649,6 +1804,81 @@ function renderOrganizers() {
     `;
     elements.organizersList.appendChild(item);
   });
+}
+
+function renderOrganizersMonitor() {
+  if (!elements.organizersMonitorList) {
+    return;
+  }
+
+  if (!state.isAdmin || !hasPermission("manageSettings")) {
+    elements.organizersMonitorList.innerHTML = '<p class="empty-state">Monitorização disponível apenas para o dono do sistema.</p>';
+    if (elements.organizersMonitorCount) elements.organizersMonitorCount.textContent = "0";
+    if (elements.organizersActiveCount) elements.organizersActiveCount.textContent = "0";
+    if (elements.organizersPendingTotal) elements.organizersPendingTotal.textContent = "0";
+    if (elements.organizersConfirmedTotal) elements.organizersConfirmedTotal.textContent = "0";
+    return;
+  }
+
+  const organizers = Array.isArray(state.organizers) ? state.organizers : [];
+  const participants = Array.isArray(state.participants) ? state.participants : [];
+  const activeCount = organizers.filter((org) => org.active).length;
+
+  if (elements.organizersMonitorCount) elements.organizersMonitorCount.textContent = String(organizers.length);
+  if (elements.organizersActiveCount) elements.organizersActiveCount.textContent = String(activeCount);
+
+  let pendingTotal = 0;
+  let confirmedTotal = 0;
+  elements.organizersMonitorList.innerHTML = "";
+
+  if (organizers.length === 0) {
+    elements.organizersMonitorList.innerHTML = '<p class="empty-state">Sem organizadores criados ainda.</p>';
+    if (elements.organizersPendingTotal) elements.organizersPendingTotal.textContent = "0";
+    if (elements.organizersConfirmedTotal) elements.organizersConfirmedTotal.textContent = "0";
+    return;
+  }
+
+  organizers.forEach((org) => {
+    const allowedActivities = Array.isArray(org.allowedActivities) ? org.allowedActivities : [];
+    const profile = normalizeActivityProfile(org.activityProfile || {});
+    const allowedKeys = allowedActivities.map((activity) => activityKey(activity)).filter(Boolean);
+    const scopedParticipants = participants.filter((participant) => {
+      if (allowedKeys.length === 0) {
+        return true;
+      }
+
+      return allowedKeys.includes(activityKey(participant.activityName));
+    });
+
+    const confirmed = scopedParticipants.filter((participant) => participantIsValid(participant)).length;
+    const pending = Math.max(0, scopedParticipants.length - confirmed);
+    pendingTotal += pending;
+    confirmedTotal += confirmed;
+
+    const item = document.createElement("article");
+    item.className = "organizer-monitor-item";
+    item.innerHTML = `
+      <div class="organizer-item-head">
+        <strong>${escapeHtml(org.name || org.username)}</strong>
+        <span class="status-chip ${org.active ? "is-valid" : "chip-danger"}">${org.active ? "Ativo" : "Inativo"}</span>
+      </div>
+      <div class="organizer-meta">@${escapeHtml(org.username)} · perfil ${escapeHtml(org.role)}</div>
+      <div class="organizer-meta">Escopo: ${escapeHtml(allowedActivities.length > 0 ? allowedActivities.join(", ") : "Todas as atividades")}</div>
+      ${profile.title ? `<div class="organizer-meta">Título: ${escapeHtml(profile.title)}</div>` : ''}
+      ${profile.description ? `<div class="organizer-meta">Descrição: ${escapeHtml(profile.description.slice(0, 180))}${profile.description.length > 180 ? "..." : ""}</div>` : ''}
+      ${profile.date || profile.startTime || profile.endTime || profile.location ? `<div class="organizer-meta">${escapeHtml([profile.date, profile.startTime ? `Início ${profile.startTime}` : "", profile.endTime ? `Fim ${profile.endTime}` : "", profile.location].filter(Boolean).join(" · "))}</div>` : ''}
+      ${profile.flyerUrl ? `<div class="organizer-meta">Flyer: <a href="${escapeHtml(profile.flyerUrl)}" target="_blank" rel="noopener">link</a></div>` : ''}
+      <div class="participants-summary organizer-monitor-stats">
+        <div><span>Total</span><strong>${scopedParticipants.length}</strong></div>
+        <div><span>Pendentes</span><strong>${pending}</strong></div>
+        <div><span>Confirmados</span><strong>${confirmed}</strong></div>
+      </div>
+    `;
+    elements.organizersMonitorList.appendChild(item);
+  });
+
+  if (elements.organizersPendingTotal) elements.organizersPendingTotal.textContent = String(pendingTotal);
+  if (elements.organizersConfirmedTotal) elements.organizersConfirmedTotal.textContent = String(confirmedTotal);
 }
 
 function renderCheckinDashboard() {
@@ -2015,6 +2245,7 @@ elements.adminLoginForm.addEventListener("submit", async (event) => {
   closeAdminDialog();
   await loadServerParticipants();
   await loadOrganizers();
+  await loadOwnActivityProfile();
   await loadEventConfig();
   await syncCheckinQueue();
   renderAll();
@@ -2272,6 +2503,48 @@ if (elements.organizerForm) {
       await loadServerParticipants();
     } catch (error) {
       elements.organizerStatus.textContent = error.message || "Falha ao criar organizador.";
+    }
+  });
+}
+
+if (elements.activityProfileForm) {
+  elements.activityProfileForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!state.isAdmin) {
+      openAdminDialog();
+      return;
+    }
+
+    const flyerFile = elements.activityFlyerImageInput?.files?.[0] || null;
+    const flyerImage = flyerFile
+      ? await fileToDataUrl(flyerFile).catch(() => "")
+      : safeTrim(state.ownActivityProfile?.flyerImage || "");
+
+    const profile = {
+      title: safeTrim(elements.activityTitleInput?.value || ""),
+      description: safeTrim(elements.activityDescriptionInput?.value || ""),
+      date: safeTrim(elements.activityDateInput?.value || ""),
+      location: safeTrim(elements.activityLocationInput?.value || ""),
+      startTime: safeTrim(elements.activityStartTimeInput?.value || ""),
+      endTime: safeTrim(elements.activityEndTimeInput?.value || ""),
+      flyerUrl: safeTrim(elements.activityFlyerUrlInput?.value || ""),
+      flyerImage,
+    };
+
+    try {
+      await saveOwnActivityProfile(profile);
+      if (elements.activityProfileStatus) {
+        elements.activityProfileStatus.textContent = "Atividade guardada com sucesso.";
+      }
+      if (elements.activityFlyerImageInput) {
+        elements.activityFlyerImageInput.value = "";
+      }
+      await loadOrganizers();
+    } catch (error) {
+      if (elements.activityProfileStatus) {
+        elements.activityProfileStatus.textContent = error.message || "Falha ao guardar atividade.";
+      }
     }
   });
 }
@@ -2695,15 +2968,38 @@ async function handleScannedCode(data) {
   }
 
   let participant = state.participants.find((p) => p.code === code);
-  if (!participant) {
-    participant = await loadPublicPass(code);
-    if (participant) mergeParticipants([participant]);
+  let payload = null;
+
+  try {
+    payload = await loadPublicPassPayload(code);
+  } catch {
+    payload = null;
+  }
+
+  if (payload?.participant) {
+    participant = normalizeParticipant(payload.participant);
+    mergeParticipants([participant]);
   }
 
   if (!participant) {
-    elements.scannerStatus.textContent = `Código scaneado: ${code}. Passe não encontrado.`;
-    elements.checkinStatus.textContent = "Não encontrei nenhum participante para este QR.";
+    elements.scannerStatus.textContent = `QR inválido (${code}). Passe não encontrado.`;
+    elements.checkinStatus.textContent = "QR inválido. Não existe passe para este código.";
     playScanFeedback("error");
+    elements.checkinResult.hidden = true;
+    elements.checkinEmptyResult.hidden = false;
+    elements.checkinMatches.hidden = true;
+    return;
+  }
+
+  const eventName = safeTrim(payload?.eventName || state.eventConfig.eventName || "evento atual");
+  const isValidQr = payload?.validation
+    ? Boolean(payload.validation.isValid)
+    : participantIsValid(participant);
+
+  if (!isValidQr) {
+    elements.scannerStatus.textContent = `QR inválido para ${eventName}. Passe sem validação do organizador.`;
+    elements.checkinStatus.textContent = "QR inválido. Este passe ainda não foi validado pelo organizador.";
+    playScanFeedback("warning");
     elements.checkinResult.hidden = true;
     elements.checkinEmptyResult.hidden = false;
     elements.checkinMatches.hidden = true;
@@ -2712,10 +3008,8 @@ async function handleScannedCode(data) {
 
   selectCheckinParticipant(participant);
   const valid = participantIsValid(participant);
-  elements.scannerStatus.textContent = `Scan concluído: ${participant.fullName}.`;
-  elements.checkinStatus.textContent = valid
-    ? "QR reconhecido. Participante carregado para confirmar entrada."
-    : "QR reconhecido, mas o passe ainda está pendente de validação.";
+  elements.scannerStatus.textContent = `QR válido para ${eventName}: ${participant.fullName}.`;
+  elements.checkinStatus.textContent = `QR válido para ${eventName}. Participante carregado para confirmar entrada.`;
 
   if (valid && !participant.checkedInAt) {
     await confirmCurrentCheckinEntry("scan");
@@ -2723,13 +3017,9 @@ async function handleScannedCode(data) {
   }
 
   if (valid && participant.checkedInAt) {
-    elements.checkinStatus.textContent = "QR reconhecido. Esta entrada já estava confirmada.";
+    elements.checkinStatus.textContent = `QR válido para ${eventName}. Esta entrada já estava confirmada.`;
     playScanFeedback("info");
     return;
-  }
-
-  if (!valid) {
-    playScanFeedback("warning");
   }
 }
 
@@ -2767,6 +3057,7 @@ async function initializeApp() {
   if (state.isAdmin) {
     await loadServerParticipants();
     await loadOrganizers();
+    await loadOwnActivityProfile();
     await syncCheckinQueue();
     renderAll();
   }
