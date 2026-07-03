@@ -30,6 +30,7 @@
 
         <div class="admin-controls">
           <span class="admin-status" id="adminStatusLabel">Público</span>
+          <small class="admin-scope" id="adminScopeLabel" hidden></small>
           <button class="secondary-action" type="button" id="adminLoginButton">Organizador</button>
           <button class="secondary-action" type="button" id="adminLogoutButton" hidden>Sair</button>
         </div>
@@ -209,7 +210,7 @@
                 <p id="passMeta">Aguardando confirmação do organizador</p>
                 <div class="button-row">
                   <button type="button" class="secondary-action" id="copyPass">Copiar</button>
-                  <button type="button" class="secondary-action" id="sharePass">WhatsApp</button>
+                  <button type="button" class="secondary-action" id="sharePass">WhatsApp (PDF)</button>
                   <button type="button" class="secondary-action" id="printPass">Imprimir</button>
                 </div>
               </div>
@@ -221,6 +222,7 @@
               <h3>Participantes confirmados</h3>
               <span id="confirmedCount" class="status-chip is-valid">0</span>
             </div>
+            <p class="form-status">Clique num participante confirmado para abrir o passe e o QR de entrada.</p>
             <div id="confirmedPassesList" class="confirmed-passes-grid"></div>
             <p class="empty-state confirmed-empty" id="confirmedEmpty">Nenhum participante confirmado ainda.</p>
           </section>
@@ -408,8 +410,80 @@
 
             <section class="audit-section">
               <h3>Histórico de auditoria</h3>
+              <div class="tool-row audit-filters">
+                <input id="auditActionFilter" type="search" placeholder="Filtrar por ação (ex.: confirm_payment)">
+                <input id="auditUserFilter" type="search" placeholder="Filtrar por utilizador (ex.: joao.financeiro)">
+                <input id="auditDateFrom" type="date" aria-label="Data inicial da auditoria">
+                <input id="auditDateTo" type="date" aria-label="Data final da auditoria">
+                <button type="button" class="secondary-action compact-action" id="clearAuditFilters">Limpar filtros</button>
+              </div>
               <div id="auditList" class="audit-list">
                 <p class="empty-state">Sem ações registradas ainda.</p>
+              </div>
+            </section>
+
+            <section class="organizers-section" id="organizersSection" hidden>
+              <h3>Gestão de organizadores</h3>
+              <p class="form-status">Crie contas individuais com escopo por atividade e senha própria.</p>
+
+              <form id="organizerForm" class="organizer-form">
+                <label>
+                  <span>Nome</span>
+                  <input id="organizerName" type="text" maxlength="120" placeholder="Ex.: Maria Lopes">
+                </label>
+                <label>
+                  <span>Utilizador</span>
+                  <input id="organizerUsername" type="text" maxlength="50" placeholder="Ex.: maria.financeiro" required>
+                </label>
+                <label>
+                  <span>Email (opcional)</span>
+                  <input id="organizerEmail" type="email" maxlength="120" placeholder="Ex.: maria@email.com">
+                </label>
+                <label>
+                  <span>Telefone (opcional)</span>
+                  <input id="organizerPhone" type="tel" maxlength="80" placeholder="Ex.: +351 912 345 678">
+                </label>
+                <label>
+                  <span>Perfil</span>
+                  <select id="organizerRole" required>
+                    <option value="viewer">viewer</option>
+                    <option value="entry">entry</option>
+                    <option value="finance">finance</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Senha inicial</span>
+                  <input id="organizerPin" type="password" minlength="6" maxlength="80" placeholder="Mínimo 6, com letra e número" required>
+                </label>
+                <label class="span-2">
+                  <span>Atividades permitidas (separadas por vírgula)</span>
+                  <input id="organizerActivities" type="text" placeholder="Ex.: Workshop, Torneio Infantil">
+                </label>
+                <button type="submit" class="secondary-action">Criar organizador</button>
+              </form>
+
+              <p class="form-status" id="organizerStatus" role="status" aria-live="polite"></p>
+
+              <section class="organizer-invite" id="organizerInviteBox" hidden>
+                <h4>Convite do organizador</h4>
+                <label>
+                  <span>Link de acesso</span>
+                  <input id="organizerInviteLink" type="url" readonly>
+                </label>
+                <label>
+                  <span>Mensagem pronta</span>
+                  <textarea id="organizerInviteMessage" rows="5" readonly></textarea>
+                </label>
+                <div class="organizer-actions">
+                  <button type="button" class="secondary-action compact-action" id="copyInviteMessage">Copiar mensagem</button>
+                  <button type="button" class="secondary-action compact-action" id="sendInviteWhatsapp">WhatsApp</button>
+                  <button type="button" class="secondary-action compact-action" id="sendInviteEmail">Email</button>
+                </div>
+              </section>
+
+              <div id="organizersList" class="organizers-list">
+                <p class="empty-state">Sem organizadores criados ainda.</p>
               </div>
             </section>
           </div>
@@ -423,6 +497,11 @@
           <p>Acesso reservado</p>
           <h2>Entrar como organizador</h2>
         </div>
+
+        <label>
+          <span>Utilizador (opcional)</span>
+          <input id="adminUser" type="text" autocomplete="username" placeholder="Ex.: maria.financeiro">
+        </label>
 
         <label>
           <span>Senha</span>
@@ -440,6 +519,10 @@
 
     <!-- QR Code Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- HTML to canvas for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- PDF generator -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- QR Scanner -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="assets/js/app.js"></script>

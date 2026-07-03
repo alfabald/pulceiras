@@ -66,6 +66,78 @@ function env_string(string $name, string $default = ''): string
     return trim((string) $value);
 }
 
+function current_request_ip(): string
+{
+    $forwarded = clean_text($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '', 120);
+    if ($forwarded !== '') {
+        $parts = explode(',', $forwarded);
+        $candidate = trim((string) ($parts[0] ?? ''));
+        if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+            return $candidate;
+        }
+    }
+
+    $remote = clean_text($_SERVER['REMOTE_ADDR'] ?? '', 80);
+    if (filter_var($remote, FILTER_VALIDATE_IP)) {
+        return $remote;
+    }
+
+    return '';
+}
+
+function parse_allowed_ips(mixed $raw): array
+{
+    $text = trim((string) $raw);
+    if ($text === '') {
+        return [];
+    }
+
+    $parts = preg_split('/[,;\n]+/', $text) ?: [];
+    $unique = [];
+    foreach ($parts as $part) {
+        $ip = trim((string) $part);
+        if (filter_var($ip, FILTER_VALIDATE_IP)) {
+            $unique[$ip] = true;
+        }
+    }
+
+    return array_keys($unique);
+}
+
+function admin_allowed_ips(): array
+{
+    return parse_allowed_ips(env_string('ADMIN_ALLOWED_IPS'));
+}
+
+function admin_ip_allowed(): bool
+{
+    $allowed = admin_allowed_ips();
+    if (count($allowed) === 0) {
+        return true;
+    }
+
+    $ip = current_request_ip();
+    if ($ip === '') {
+        return false;
+    }
+
+    return in_array($ip, $allowed, true);
+}
+
+function enforce_admin_ip_access(): void
+{
+    if (!admin_ip_allowed()) {
+        json_response(['error' => 'Acesso administrativo bloqueado para este IP.'], 403);
+    }
+}
+
+function admin_session_fingerprint(): string
+{
+    $ip = current_request_ip();
+    $ua = clean_text($_SERVER['HTTP_USER_AGENT'] ?? '', 300);
+    return hash('sha256', ADMIN_PIN_SALT . '|' . $ip . '|' . $ua);
+}
+
 function bool_value(mixed $value): bool
 {
     if (is_bool($value)) {
@@ -612,6 +684,368 @@ function current_admin_role(): string
     return $role !== '' ? $role : 'none';
 }
 
+function normalize_activity_key(mixed $value): string
+{
+    $activity = clean_text($value, 120);
+    if ($activity === '') {
+        return '';
+    }
+
+    if (function_exists('mb_strtolower')) {
+        return trim((string) mb_strtolower($activity, 'UTF-8'));
+    }
+
+    return trim(strtolower($activity));
+}
+
+function parse_allowed_activities(mixed $raw): array
+{
+    $text = trim((string) $raw);
+    if ($text === '') {
+        return [];
+    }
+
+    $parts = preg_split('/[,;\n]+/', $text) ?: [];
+    $unique = [];
+
+    foreach ($parts as $part) {
+        $key = normalize_activity_key($part);
+        if ($key !== '') {
+            $unique[$key] = true;
+        }
+    }
+
+    return array_keys($unique);
+}
+
+function role_allowed_activities(string $role): array
+{
+    if ($role === 'admin') {
+        return [];
+    }
+
+    $envMap = [
+        'entry' => 'ENTRY_ALLOWED_ACTIVITIES',
+        'finance' => 'FINANCE_ALLOWED_ACTIVITIES',
+        'viewer' => 'VIEWER_ALLOWED_ACTIVITIES',
+    ];
+
+    $envName = $envMap[$role] ?? '';
+    if ($envName === '') {
+        return [];
+    }
+
+    return parse_allowed_activities(env_string($envName));
+}
+
+function organizer_username_key(mixed $value): string
+{
+    $raw = strtolower(clean_text($value, 50));
+    $normalized = preg_replace('/[^a-z0-9._-]+/', '', $raw);
+    return trim((string) $normalized);
+}
+
+function organizers_file(): string
+{
+    $directory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'data';
+    if (!is_dir($directory)) {
+        mkdir($directory, 0775, true);
+    }
+
+    $file = $directory . DIRECTORY_SEPARATOR . 'organizers.json';
+    if (!file_exists($file)) {
+        file_put_contents($file, "[]\n", LOCK_EX);
+    }
+
+    return $file;
+}
+
+function normalize_organizer_role(mixed $value): string
+{
+    $role = clean_text($value, 30);
+    $allowed = ['admin', 'entry', 'finance', 'viewer'];
+    if (!in_array($role, $allowed, true)) {
+        return 'viewer';
+    }
+
+    return $role;
+}
+
+function normalize_organizer_activities(mixed $value): array
+{
+    if (is_array($value)) {
+        $list = [];
+        foreach ($value as $item) {
+            $key = normalize_activity_key($item);
+            if ($key !== '') {
+                $list[$key] = true;
+            }
+        }
+        return array_keys($list);
+    }
+
+    return parse_allowed_activities($value);
+}
+
+function organizer_pin_max_age_days(): int
+{
+    $raw = clean_text(env_string('ORGANIZER_PIN_MAX_AGE_DAYS', '90'), 10);
+    if ($raw === '') {
+        return 90;
+    }
+
+    $days = (int) $raw;
+    if ($days < 0) {
+        return 0;
+    }
+
+    return $days;
+}
+
+function organizer_pin_expired(array $organizer): bool
+{
+    $maxDays = organizer_pin_max_age_days();
+    if ($maxDays <= 0) {
+        return false;
+    }
+
+    $changedAt = normalize_timestamp($organizer['pinChangedAt'] ?? '')
+        ?: normalize_timestamp($organizer['updatedAt'] ?? '')
+        ?: normalize_timestamp($organizer['createdAt'] ?? '');
+
+    if ($changedAt === '') {
+        return true;
+    }
+
+    $changedTs = strtotime($changedAt);
+    if ($changedTs === false) {
+        return true;
+    }
+
+    $expiresTs = $changedTs + ($maxDays * 86400);
+    return time() >= $expiresTs;
+}
+
+function organizer_requires_pin_change(array $organizer): bool
+{
+    return bool_value($organizer['mustChangePassword'] ?? false) || organizer_pin_expired($organizer);
+}
+
+function read_organizers(): array
+{
+    $contents = file_get_contents(organizers_file()) ?: '[]';
+    $decoded = json_decode($contents, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $result = [];
+    foreach ($decoded as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+
+        $username = organizer_username_key($item['username'] ?? '');
+        $pinHash = clean_text($item['pinHash'] ?? '', 255);
+        if ($username === '' || $pinHash === '') {
+            continue;
+        }
+
+        $role = normalize_organizer_role($item['role'] ?? 'viewer');
+        $activities = normalize_organizer_activities($item['allowedActivities'] ?? []);
+        $result[] = [
+            'id' => clean_text($item['id'] ?? ('org-' . substr(md5($username), 0, 12)), 40),
+            'name' => clean_text($item['name'] ?? $username, 120),
+            'username' => $username,
+            'email' => clean_text($item['email'] ?? '', 120),
+            'phone' => clean_text($item['phone'] ?? '', 80),
+            'role' => $role,
+            'allowedActivities' => $activities,
+            'active' => bool_value($item['active'] ?? true),
+            'mustChangePassword' => bool_value($item['mustChangePassword'] ?? false),
+            'pinHash' => $pinHash,
+            'createdAt' => normalize_timestamp($item['createdAt'] ?? '') ?: date(DATE_ATOM),
+            'updatedAt' => normalize_timestamp($item['updatedAt'] ?? '') ?: date(DATE_ATOM),
+            'pinChangedAt' => normalize_timestamp($item['pinChangedAt'] ?? '')
+                ?: normalize_timestamp($item['updatedAt'] ?? '')
+                ?: normalize_timestamp($item['createdAt'] ?? '')
+                ?: date(DATE_ATOM),
+        ];
+    }
+
+    usort($result, static function (array $a, array $b): int {
+        return strcmp((string) ($a['username'] ?? ''), (string) ($b['username'] ?? ''));
+    });
+
+    return $result;
+}
+
+function write_organizers(array $organizers): void
+{
+    file_put_contents(organizers_file(), json_encode(array_values($organizers), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n", LOCK_EX);
+}
+
+function hash_organizer_pin(string $pin): string
+{
+    return password_hash($pin, PASSWORD_DEFAULT);
+}
+
+function public_organizer_profile(array $organizer): array
+{
+    $requiresPinChange = organizer_requires_pin_change($organizer);
+
+    return [
+        'id' => clean_text($organizer['id'] ?? '', 40),
+        'name' => clean_text($organizer['name'] ?? '', 120),
+        'username' => organizer_username_key($organizer['username'] ?? ''),
+        'email' => clean_text($organizer['email'] ?? '', 120),
+        'phone' => clean_text($organizer['phone'] ?? '', 80),
+        'role' => normalize_organizer_role($organizer['role'] ?? 'viewer'),
+        'allowedActivities' => normalize_organizer_activities($organizer['allowedActivities'] ?? []),
+        'active' => bool_value($organizer['active'] ?? true),
+        'mustChangePassword' => bool_value($organizer['mustChangePassword'] ?? false),
+        'pinChangedAt' => normalize_timestamp($organizer['pinChangedAt'] ?? '') ?: date(DATE_ATOM),
+        'requiresPinChange' => $requiresPinChange,
+        'createdAt' => normalize_timestamp($organizer['createdAt'] ?? '') ?: date(DATE_ATOM),
+        'updatedAt' => normalize_timestamp($organizer['updatedAt'] ?? '') ?: date(DATE_ATOM),
+    ];
+}
+
+function verify_organizer_credentials(string $username, string $pin): array
+{
+    $key = organizer_username_key($username);
+    if ($key === '' || $pin === '') {
+        return [];
+    }
+
+    $accounts = read_organizers();
+    foreach ($accounts as $organizer) {
+        if (($organizer['username'] ?? '') !== $key) {
+            continue;
+        }
+
+        if (!bool_value($organizer['active'] ?? true)) {
+            return [];
+        }
+
+        $hash = (string) ($organizer['pinHash'] ?? '');
+        $valid = password_verify($pin, $hash);
+        if (!$valid && preg_match('/^[a-f0-9]{64}$/i', $hash)) {
+            $legacy = hash('sha256', ADMIN_PIN_SALT . $pin);
+            $valid = hash_equals(strtolower($hash), strtolower($legacy));
+        }
+
+        if (!$valid) {
+            return [];
+        }
+
+        return [
+            'role' => normalize_organizer_role($organizer['role'] ?? 'viewer'),
+            'allowedActivities' => normalize_organizer_activities($organizer['allowedActivities'] ?? []),
+            'organizerUsername' => $organizer['username'],
+            'organizerName' => clean_text($organizer['name'] ?? '', 120),
+            'requiresPinChange' => organizer_requires_pin_change($organizer),
+        ];
+    }
+
+    return [];
+}
+
+function current_admin_allowed_activities(): array
+{
+    start_admin_session();
+    $role = current_admin_role();
+    if ($role === 'admin') {
+        return [];
+    }
+
+    $stored = $_SESSION['allowedActivities'] ?? [];
+    if (!is_array($stored) || count($stored) === 0) {
+        return role_allowed_activities($role);
+    }
+
+    $unique = [];
+    foreach ($stored as $item) {
+        $key = normalize_activity_key($item);
+        if ($key !== '') {
+            $unique[$key] = true;
+        }
+    }
+
+    return array_keys($unique);
+}
+
+function current_admin_username(): string
+{
+    start_admin_session();
+    return organizer_username_key($_SESSION['organizerUsername'] ?? '');
+}
+
+function owner_username(): string
+{
+    $configured = organizer_username_key(env_string('OWNER_USERNAME', ''));
+    if ($configured !== '') {
+        return $configured;
+    }
+
+    $accounts = read_organizers();
+    $owner = '';
+    $ownerCreatedAt = null;
+
+    foreach ($accounts as $account) {
+        if (normalize_organizer_role($account['role'] ?? '') !== 'admin') {
+            continue;
+        }
+
+        $username = organizer_username_key($account['username'] ?? '');
+        if ($username === '') {
+            continue;
+        }
+
+        $created = strtotime((string) ($account['createdAt'] ?? ''));
+        if ($owner === '' || ($created !== false && ($ownerCreatedAt === null || $created < $ownerCreatedAt))) {
+            $owner = $username;
+            $ownerCreatedAt = $created === false ? $ownerCreatedAt : $created;
+        }
+    }
+
+    if ($owner !== '') {
+        return $owner;
+    }
+
+    return 'dono.gabu';
+}
+
+function current_admin_is_owner(): bool
+{
+    $username = current_admin_username();
+    if ($username === '') {
+        return false;
+    }
+
+    return hash_equals(owner_username(), $username);
+}
+
+function admin_participant_in_scope(array $participant): bool
+{
+    $allowed = current_admin_allowed_activities();
+    if (count($allowed) === 0) {
+        return true;
+    }
+
+    $activityKey = normalize_activity_key($participant['activityName'] ?? '');
+    if ($activityKey === '') {
+        return false;
+    }
+
+    return in_array($activityKey, $allowed, true);
+}
+
+function filter_participants_for_admin_scope(array $participants): array
+{
+    return array_values(array_filter($participants, 'admin_participant_in_scope'));
+}
+
 function role_permissions(string $role): array
 {
     $map = [
@@ -640,8 +1074,21 @@ function has_permission(string $permission): bool
 
 function require_permission(string $permission): void
 {
+    if (!admin_ip_allowed()) {
+        json_response(['error' => 'Acesso administrativo bloqueado para este IP.'], 403);
+    }
+
     if (!has_permission($permission)) {
         json_response(['error' => 'Sem permissão para esta operação.'], 403);
+    }
+}
+
+function require_owner_access(): void
+{
+    require_permission('manageSettings');
+
+    if (!current_admin_is_owner()) {
+        json_response(['error' => 'Somente a conta dona pode gerir organizadores.'], 403);
     }
 }
 
@@ -652,6 +1099,7 @@ function append_audit_log(string $action, string $targetCode = '', array $meta =
         'action' => clean_text($action, 60),
         'targetCode' => clean_text($targetCode, 40),
         'actorRole' => current_admin_role(),
+        'actorUsername' => current_admin_username(),
         'ip' => clean_text($_SERVER['REMOTE_ADDR'] ?? '', 80),
         'meta' => $meta,
     ];
@@ -784,7 +1232,25 @@ function start_admin_session(): void
 function is_admin(): bool
 {
     start_admin_session();
-    return ($_SESSION['is_admin'] ?? false) === true;
+    if (($_SESSION['is_admin'] ?? false) !== true) {
+        return false;
+    }
+
+    if (!admin_ip_allowed()) {
+        return false;
+    }
+
+    $sessionFingerprint = clean_text($_SESSION['fingerprint'] ?? '', 80);
+    if ($sessionFingerprint === '') {
+        return false;
+    }
+
+    $expected = admin_session_fingerprint();
+    if (!hash_equals($sessionFingerprint, $expected)) {
+        return false;
+    }
+
+    return true;
 }
 
 function require_admin(): void

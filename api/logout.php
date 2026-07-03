@@ -22,4 +22,7 @@ json_response([
     'isAdmin' => false,
     'role' => 'none',
     'permissions' => [],
+    'allowedActivities' => [],
+    'organizerUsername' => '',
+    'organizerName' => '',
 ]);

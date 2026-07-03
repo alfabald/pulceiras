@@ -11,4 +11,9 @@ json_response([
     'isAdmin' => is_admin(),
     'role' => current_admin_role(),
     'permissions' => $_SESSION['permissions'] ?? [],
+    'allowedActivities' => current_admin_allowed_activities(),
+    'organizerUsername' => organizer_username_key($_SESSION['organizerUsername'] ?? ''),
+    'organizerName' => clean_text($_SESSION['organizerName'] ?? '', 120),
+    'requiresPinChange' => bool_value($_SESSION['requiresPinChange'] ?? false),
+    'isOwner' => current_admin_is_owner(),
 ]);

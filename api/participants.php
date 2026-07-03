@@ -10,6 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 require_permission('viewParticipants');
 
 $participants = read_participants();
+$participants = filter_participants_for_admin_scope($participants);
 $guests = 0;
 $checkedIn = 0;
 $pledged = 0.0;

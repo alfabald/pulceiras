@@ -31,6 +31,10 @@ if ($foundIndex === null) {
     json_response(['error' => 'Participante não encontrado.'], 404);
 }
 
+if (!admin_participant_in_scope($participants[$foundIndex])) {
+    json_response(['error' => 'Participante não encontrado.'], 404);
+}
+
 $amount = normalize_amount($input['agreedAmount'] ?? ($participants[$foundIndex]['agreedAmount'] ?? 0));
 $proofImage = clean_text($input['paymentProofImage'] ?? '', 400000);
 $proofNote = clean_text($input['paymentProofNote'] ?? '', 300);
@@ -52,7 +56,9 @@ append_audit_log('confirm_payment', $code, [
     'proofNote' => $proofNote,
 ]);
 
+$visibleParticipants = filter_participants_for_admin_scope($participants);
+
 json_response([
     'participant' => $participants[$foundIndex],
-    'participants' => $participants,
+    'participants' => $visibleParticipants,
 ]);

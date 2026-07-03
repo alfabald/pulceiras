@@ -18,6 +18,22 @@ if ($code === '') {
 }
 
 $participants = read_participants();
+$target = null;
+foreach ($participants as $participant) {
+    if (($participant['code'] ?? '') === $code) {
+        $target = $participant;
+        break;
+    }
+}
+
+if (!is_array($target)) {
+    json_response(['error' => 'Participante não encontrado.'], 404);
+}
+
+if (!admin_participant_in_scope($target)) {
+    json_response(['error' => 'Participante não encontrado.'], 404);
+}
+
 $filtered = array_values(array_filter($participants, fn($p) => ($p['code'] ?? '') !== $code));
 
 if (count($filtered) === count($participants)) {

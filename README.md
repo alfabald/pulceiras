@@ -43,6 +43,8 @@ Sistema para substituir pulseiras físicas por passes digitais com QR e confirma
 
 Os PINs de `entry`, `finance` e `viewer` são configurados por variáveis de ambiente em `.env`.
 
+Hardening opcional recomendado: definir `ADMIN_ALLOWED_IPS` para limitar login e ações administrativas a IPs conhecidos.
+
 ## Como usar agora
 
 Abre o ficheiro `index.html` no navegador. Esta forma funciona mesmo sem PHP, mas os dados ficam guardados apenas nesse navegador.
@@ -141,3 +143,23 @@ Retorna os dados mínimos do passe e o campo `amountConfirmed`, usado para valid
 3. Adicionar leitura de QR Code real.
 4. Criar uma página pública de transparência dos fundos.
 5. Preparar texto oficial para convite no WhatsApp.
+
+## Setup rápido do dono e equipas
+
+Para um guia pronto para copiar e colar (bootstrap do dono, criação de organizadores e operações comuns), consulte:
+
+- SETUP-DONO-E-ORGANIZADORES.md
+
+Script direto (PowerShell):
+
+- scripts/setup-completo.ps1
+
+Operação em produção:
+
+- scripts/backup-diario.ps1
+- scripts/backup-diario.sh
+- Variável de rotação: ORGANIZER_PIN_MAX_AGE_DAYS
+
+Entrega para outra organização (instância separada):
+
+- scripts/nova-instancia-local.ps1

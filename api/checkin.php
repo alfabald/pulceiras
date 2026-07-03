@@ -38,15 +38,20 @@ if ($foundIndex === null) {
     json_response(['error' => 'Participante não encontrado.'], 404);
 }
 
+if (!admin_participant_in_scope($participants[$foundIndex])) {
+    json_response(['error' => 'Participante não encontrado.'], 404);
+}
+
 $isTryingCheckin = $checkedInAt !== '';
 if ($isTryingCheckin && !bool_value($participants[$foundIndex]['amountConfirmed'] ?? false)) {
     json_response(['error' => 'Passe ainda não válido. Confirma o montante com o organizador primeiro.'], 422);
 }
 
 if ($isTryingCheckin && !empty($participants[$foundIndex]['checkedInAt'])) {
+    $visibleParticipants = filter_participants_for_admin_scope($participants);
     json_response([
         'participant' => $participants[$foundIndex],
-        'participants' => $participants,
+        'participants' => $visibleParticipants,
         'alreadyCheckedIn' => true,
         'message' => 'Entrada já confirmada anteriormente.',
     ]);
@@ -61,7 +66,9 @@ append_audit_log($checkedInAt === '' ? 'checkin_undo' : 'checkin_confirm', $code
     'checkedInAt' => $checkedInAt,
 ]);
 
+$visibleParticipants = filter_participants_for_admin_scope($participants);
+
 json_response([
     'participant' => $participants[$foundIndex],
-    'participants' => $participants,
+    'participants' => $visibleParticipants,
 ]);

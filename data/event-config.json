@@ -1,0 +1,19 @@
+{
+    "eventName": "Gabu Hamburg 2026",
+    "eventDate": "2026-07-18",
+    "eventLocation": "Hamburg",
+    "adultPrice": 20,
+    "childPrice": 5,
+    "activityCatalog": [
+        "Piquinique",
+        "Workshop",
+        "Torneio Infantil",
+        "Atividade Geral"
+    ],
+    "teams": [
+        "Entrada",
+        "Financeiro",
+        "Coordenação"
+    ],
+    "updatedAt": "2026-07-01T22:46:57+02:00"
+}

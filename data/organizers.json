@@ -1,0 +1,88 @@
+[
+    {
+        "id": "org-05f67e08d432",
+        "name": "Dono do Sistema",
+        "username": "dono.gabu",
+        "email": "",
+        "phone": "",
+        "role": "admin",
+        "allowedActivities": [],
+        "active": true,
+        "mustChangePassword": false,
+        "pinHash": "$2y$10$cZqSlJFKlPdXMnDrey1tKOdpyx3idd9jZ\/9utR0k53S2bwFn3bd0S",
+        "createdAt": "2026-07-01T21:28:56+02:00",
+        "updatedAt": "2026-07-01T21:28:56+02:00",
+        "pinChangedAt": "2026-07-01T21:28:56+02:00"
+    },
+    {
+        "id": "org-bb42f2962cc9",
+        "name": "Administrador Backup",
+        "username": "admin.backup",
+        "email": "",
+        "phone": "",
+        "role": "admin",
+        "allowedActivities": [],
+        "active": true,
+        "mustChangePassword": true,
+        "pinHash": "$2y$10$7DEi14SPL0HfgFLp\/nitBO9g5KE0z34TwA9e5UEUvwj.UwBLVhbKm",
+        "createdAt": "2026-07-01T21:28:57+02:00",
+        "updatedAt": "2026-07-01T21:43:01+02:00",
+        "pinChangedAt": "2026-07-01T21:43:01+02:00"
+    },
+    {
+        "id": "org-3e0671819041",
+        "name": "Equipe Entrada Turno 1",
+        "username": "entrada.turno1",
+        "email": "",
+        "phone": "",
+        "role": "entry",
+        "allowedActivities": [
+            "workshop",
+            "torneio infantil"
+        ],
+        "active": true,
+        "mustChangePassword": true,
+        "pinHash": "$2y$10$vuFiOk5QXgwGKUUt502Nc.XHzFE3M1TR5cYJqFj7WL4pPKEifrlve",
+        "createdAt": "2026-07-01T21:28:57+02:00",
+        "updatedAt": "2026-07-01T21:43:00+02:00",
+        "pinChangedAt": "2026-07-01T21:43:00+02:00"
+    },
+    {
+        "id": "org-f4c14547a938",
+        "name": "Equipe Financeiro Turno 1",
+        "username": "financeiro.turno1",
+        "email": "",
+        "phone": "",
+        "role": "finance",
+        "allowedActivities": [
+            "workshop",
+            "torneio infantil",
+            "feira solidaria"
+        ],
+        "active": true,
+        "mustChangePassword": true,
+        "pinHash": "$2y$10$a95fJ.2nZrhCrV\/GD3IPcOrgJblbrYOfHpBmbL4BJPO\/P6LRbAAoC",
+        "createdAt": "2026-07-01T21:28:57+02:00",
+        "updatedAt": "2026-07-01T21:43:00+02:00",
+        "pinChangedAt": "2026-07-01T21:43:00+02:00"
+    },
+    {
+        "id": "org-a301c54dd38b",
+        "name": "Equipe Auditoria Leitura",
+        "username": "auditoria.leitura",
+        "email": "",
+        "phone": "",
+        "role": "viewer",
+        "allowedActivities": [
+            "workshop",
+            "torneio infantil",
+            "feira solidaria"
+        ],
+        "active": true,
+        "mustChangePassword": true,
+        "pinHash": "$2y$10$1z1IFslwlyAiptubLy3XHuGhoZnfGLSpp9LDK4uk\/5RN4HVUQPXUW",
+        "createdAt": "2026-07-01T21:28:57+02:00",
+        "updatedAt": "2026-07-01T21:43:00+02:00",
+        "pinChangedAt": "2026-07-01T21:43:00+02:00"
+    }
+]

@@ -10,6 +10,8 @@ const API_LOGIN = "api/login.php";
 const API_LOGOUT = "api/logout.php";
 const API_SESSION = "api/session.php";
 const API_EVENT_CONFIG = "api/event-config.php";
+const API_ORGANIZERS = "api/organizers.php";
+const API_CHANGE_PIN = "api/change-pin.php";
 const LOCAL_ADMIN_PIN = "gabu2026";
 const CHECKIN_QUEUE_KEY = "gabuCheckinQueueV1";
 const SCAN_COOLDOWN_MS = 2000;
@@ -21,6 +23,12 @@ const state = {
   isAdmin: false,
   role: "none",
   permissions: [],
+  allowedActivities: [],
+  organizerUsername: "",
+  isOwner: false,
+  organizers: [],
+  organizerInvite: null,
+  requiresPinChange: false,
   passPollingTimer: null,
   scannerStream: null,
   scannerAnimFrame: null,
@@ -108,11 +116,35 @@ const elements = {
   undoCheckin: document.querySelector("#undoCheckin"),
   openCheckinPass: document.querySelector("#openCheckinPass"),
   auditList: document.querySelector("#auditList"),
+  auditActionFilter: document.querySelector("#auditActionFilter"),
+  auditUserFilter: document.querySelector("#auditUserFilter"),
+  auditDateFrom: document.querySelector("#auditDateFrom"),
+  auditDateTo: document.querySelector("#auditDateTo"),
+  clearAuditFilters: document.querySelector("#clearAuditFilters"),
+  organizersSection: document.querySelector("#organizersSection"),
+  organizerForm: document.querySelector("#organizerForm"),
+  organizerName: document.querySelector("#organizerName"),
+  organizerUsername: document.querySelector("#organizerUsername"),
+  organizerEmail: document.querySelector("#organizerEmail"),
+  organizerPhone: document.querySelector("#organizerPhone"),
+  organizerRole: document.querySelector("#organizerRole"),
+  organizerPin: document.querySelector("#organizerPin"),
+  organizerActivities: document.querySelector("#organizerActivities"),
+  organizerStatus: document.querySelector("#organizerStatus"),
+  organizerInviteBox: document.querySelector("#organizerInviteBox"),
+  organizerInviteLink: document.querySelector("#organizerInviteLink"),
+  organizerInviteMessage: document.querySelector("#organizerInviteMessage"),
+  copyInviteMessage: document.querySelector("#copyInviteMessage"),
+  sendInviteWhatsapp: document.querySelector("#sendInviteWhatsapp"),
+  sendInviteEmail: document.querySelector("#sendInviteEmail"),
+  organizersList: document.querySelector("#organizersList"),
   adminStatusLabel: document.querySelector("#adminStatusLabel"),
+  adminScopeLabel: document.querySelector("#adminScopeLabel"),
   adminLoginButton: document.querySelector("#adminLoginButton"),
   adminLogoutButton: document.querySelector("#adminLogoutButton"),
   adminDialog: document.querySelector("#adminDialog"),
   adminLoginForm: document.querySelector("#adminLoginForm"),
+  adminUser: document.querySelector("#adminUser"),
   adminPin: document.querySelector("#adminPin"),
   adminCancelButton: document.querySelector("#adminCancelButton"),
   adminLoginStatus: document.querySelector("#adminLoginStatus"),
@@ -231,6 +263,90 @@ function parseCommaList(value) {
     .split(",")
     .map((item) => safeTrim(item))
     .filter(Boolean);
+}
+
+function appBaseUrl() {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function organizerAccessUrl(username) {
+  const url = new URL(appBaseUrl());
+  url.searchParams.set("org", safeTrim(username));
+  return url.toString();
+}
+
+function organizerInviteMessageText(payload) {
+  const name = safeTrim(payload?.name || payload?.username || "Organizador");
+  const username = safeTrim(payload?.username || "");
+  const pin = safeTrim(payload?.pin || "");
+  const link = safeTrim(payload?.link || organizerAccessUrl(username));
+  const lines = [
+    `Olá ${name},`,
+    "Seu acesso de organizador foi criado.",
+    `Link: ${link}`,
+    `Utilizador: ${username}`,
+  ];
+
+  if (pin) {
+    lines.push(`Senha inicial: ${pin}`);
+  }
+
+  lines.push("No primeiro acesso, altere a senha.");
+  return lines.join("\n");
+}
+
+function openInviteEmail(payload) {
+  const subject = encodeURIComponent("Acesso de organizador");
+  const body = encodeURIComponent(organizerInviteMessageText(payload));
+  const recipient = safeTrim(payload?.email || "");
+  const to = recipient ? encodeURIComponent(recipient) : "";
+  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+}
+
+function openInviteWhatsapp(payload) {
+  const message = organizerInviteMessageText(payload);
+  const phone = safeTrim(payload?.phone || "");
+  if (phone) {
+    const phoneEncoded = encodeURIComponent(phone.replace(/[^\d+]/g, ""));
+    window.open(`https://wa.me/${phoneEncoded}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+  } else {
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+  }
+}
+
+function renderOrganizerInvite() {
+  if (!elements.organizerInviteBox || !elements.organizerInviteLink || !elements.organizerInviteMessage) {
+    return;
+  }
+
+  if (!state.organizerInvite) {
+    elements.organizerInviteBox.hidden = true;
+    elements.organizerInviteLink.value = "";
+    elements.organizerInviteMessage.value = "";
+    return;
+  }
+
+  elements.organizerInviteBox.hidden = false;
+  elements.organizerInviteLink.value = state.organizerInvite.link;
+  elements.organizerInviteMessage.value = organizerInviteMessageText(state.organizerInvite);
+}
+
+function applyOrganizerPrefillFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const organizer = safeTrim(params.get("org"));
+  if (!organizer || !elements.adminUser) {
+    return;
+  }
+
+  elements.adminUser.value = organizer;
+}
+
+function isStrongPin(pin) {
+  const text = safeTrim(pin);
+  return text.length >= 6 && /[a-z]/i.test(text) && /\d/.test(text);
 }
 
 function getCheckinQueue() {
@@ -750,6 +866,12 @@ function setAdminState(isAdmin, options = {}) {
   state.isAdmin = isAdmin;
   state.role = isAdmin ? (options.role || state.role || "admin") : "none";
   state.permissions = isAdmin ? (options.permissions || state.permissions || []) : [];
+  state.allowedActivities = isAdmin
+    ? (Array.isArray(options.allowedActivities) ? options.allowedActivities : state.allowedActivities)
+    : [];
+  state.organizerUsername = isAdmin ? safeTrim(options.organizerUsername || state.organizerUsername) : "";
+  state.isOwner = isAdmin ? Boolean(options.isOwner) : false;
+  state.requiresPinChange = isAdmin ? Boolean(options.requiresPinChange) : false;
 
   const canEntry = hasPermission("confirmEntry");
   const canViewParticipants = hasPermission("viewParticipants");
@@ -785,8 +907,26 @@ function setAdminState(isAdmin, options = {}) {
   if (elements.registerWorkGrid) {
     elements.registerWorkGrid.classList.toggle("is-single", !isAdmin);
   }
-  elements.adminStatusLabel.textContent = isAdmin ? `Organizador (${state.role})` : "Público";
+  elements.adminStatusLabel.textContent = isAdmin
+    ? `Organizador (${state.role}${state.organizerUsername ? ` · ${state.organizerUsername}` : ""})`
+    : "Público";
   elements.adminStatusLabel.classList.toggle("is-active", isAdmin);
+
+  if (elements.adminScopeLabel) {
+    if (!isAdmin) {
+      elements.adminScopeLabel.hidden = true;
+      elements.adminScopeLabel.textContent = "";
+    } else if (Array.isArray(state.allowedActivities) && state.allowedActivities.length > 0) {
+      const list = state.allowedActivities.slice(0, 4).join(", ");
+      const suffix = state.allowedActivities.length > 4 ? ` +${state.allowedActivities.length - 4}` : "";
+      elements.adminScopeLabel.hidden = false;
+      elements.adminScopeLabel.textContent = `Escopo: ${list}${suffix}`;
+    } else {
+      elements.adminScopeLabel.hidden = false;
+      elements.adminScopeLabel.textContent = "Escopo: todas as atividades";
+    }
+  }
+
   elements.adminLoginButton.hidden = isAdmin;
   elements.adminLogoutButton.hidden = !isAdmin;
 
@@ -797,6 +937,7 @@ function setAdminState(isAdmin, options = {}) {
   if (!isAdmin && options.clearData) {
     state.participants = [];
     state.audit = [];
+    state.organizers = [];
     state.currentCheckin = null;
     localStorage.removeItem(STORAGE_KEY);
     elements.checkinResult.hidden = true;
@@ -806,8 +947,109 @@ function setAdminState(isAdmin, options = {}) {
   }
 }
 
+function normalizeOrganizer(organizer) {
+  return {
+    id: safeTrim(organizer?.id),
+    name: safeTrim(organizer?.name),
+    username: safeTrim(organizer?.username),
+    email: safeTrim(organizer?.email),
+    phone: safeTrim(organizer?.phone),
+    role: safeTrim(organizer?.role) || "viewer",
+    allowedActivities: Array.isArray(organizer?.allowedActivities)
+      ? organizer.allowedActivities.map((x) => safeTrim(x)).filter(Boolean)
+      : [],
+    active: Boolean(organizer?.active),
+    mustChangePassword: Boolean(organizer?.mustChangePassword),
+  };
+}
+
+async function changeOwnPin(currentPin, newPin) {
+  const response = await fetch(API_CHANGE_PIN, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ currentPin, newPin }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Não foi possível trocar a senha.");
+  }
+
+  return response.json().catch(() => ({}));
+}
+
+async function runRequiredPinChange(currentPin) {
+  const newPin = safeTrim(window.prompt("Nova senha obrigatória (mínimo 6, com letra e número):") || "");
+  if (!newPin) {
+    throw new Error("A troca de senha é obrigatória para continuar.");
+  }
+  if (!isStrongPin(newPin)) {
+    throw new Error("Senha fraca. Use pelo menos 6 caracteres com letras e números.");
+  }
+
+  const confirmPin = safeTrim(window.prompt("Repete a nova senha:") || "");
+  if (newPin !== confirmPin) {
+    throw new Error("As senhas não coincidem.");
+  }
+
+  await changeOwnPin(currentPin, newPin);
+  state.requiresPinChange = false;
+}
+
+async function loadOrganizers() {
+  if (isFileMode() || !hasPermission("manageSettings")) {
+    state.organizers = [];
+    renderOrganizers();
+    return;
+  }
+
+  try {
+    const response = await fetch(API_ORGANIZERS, { headers: { Accept: "application/json" } });
+    if (!response.ok) {
+      state.organizers = [];
+      renderOrganizers();
+      return;
+    }
+
+    const data = await response.json();
+    state.organizers = Array.isArray(data.organizers)
+      ? data.organizers.map(normalizeOrganizer)
+      : [];
+    renderOrganizers();
+  } catch {
+    state.organizers = [];
+    renderOrganizers();
+  }
+}
+
+async function organizerAction(action, payload = {}) {
+  const response = await fetch(API_ORGANIZERS, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ action, ...payload }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Falha ao processar organizador.");
+  }
+
+  return response.json().catch(() => ({}));
+}
+
 function openAdminDialog() {
   elements.adminLoginStatus.textContent = "";
+  if (elements.adminUser) {
+    const params = new URLSearchParams(window.location.search);
+    const organizer = safeTrim(params.get("org"));
+    elements.adminUser.value = organizer;
+  }
   elements.adminPin.value = "";
 
   if (typeof elements.adminDialog.showModal === "function") {
@@ -833,6 +1075,9 @@ async function checkAdminSession() {
     setAdminState(isAdmin, {
       role: isAdmin ? "admin" : "none",
       permissions: isAdmin ? ["viewParticipants", "confirmEntry", "confirmPayments", "deleteParticipants", "manageSettings", "viewAudit"] : [],
+      allowedActivities: [],
+      organizerUsername: isAdmin ? "admin-local" : "",
+      isOwner: isAdmin,
     });
     return;
   }
@@ -848,13 +1093,17 @@ async function checkAdminSession() {
     setAdminState(Boolean(data.isAdmin), {
       role: data.role || "none",
       permissions: Array.isArray(data.permissions) ? data.permissions : [],
+      allowedActivities: Array.isArray(data.allowedActivities) ? data.allowedActivities : [],
+      organizerUsername: data.organizerUsername || "",
+      requiresPinChange: Boolean(data.requiresPinChange),
+      isOwner: Boolean(data.isOwner),
     });
   } catch {
     setAdminState(false);
   }
 }
 
-async function loginAdmin(pin) {
+async function loginAdmin(pin, username = "") {
   if (isFileMode()) {
     const ok = pin === LOCAL_ADMIN_PIN;
     if (ok) {
@@ -862,6 +1111,9 @@ async function loginAdmin(pin) {
       setAdminState(true, {
         role: "admin",
         permissions: ["viewParticipants", "confirmEntry", "confirmPayments", "deleteParticipants", "manageSettings", "viewAudit"],
+        allowedActivities: [],
+        organizerUsername: username || "admin-local",
+        isOwner: true,
       });
     }
     return ok;
@@ -873,7 +1125,7 @@ async function loginAdmin(pin) {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({ pin, username }),
   });
 
   if (!response.ok) {
@@ -885,6 +1137,10 @@ async function loginAdmin(pin) {
     setAdminState(true, {
       role: data.role || "admin",
       permissions: Array.isArray(data.permissions) ? data.permissions : [],
+      allowedActivities: Array.isArray(data.allowedActivities) ? data.allowedActivities : [],
+      organizerUsername: data.organizerUsername || safeTrim(username),
+      requiresPinChange: Boolean(data.requiresPinChange),
+      isOwner: Boolean(data.isOwner),
     });
   }
   return Boolean(data.isAdmin);
@@ -940,6 +1196,62 @@ function participantText(participant) {
     `Validade: ${passStatusText(participant)}`,
     `Link: ${getPassUrl(participant)}`,
   ].join("\n");
+}
+
+function downloadFile(file) {
+  const blobUrl = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = blobUrl;
+  anchor.download = file.name || "passe-atividade.pdf";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+}
+
+async function generatePassPdfFile(participant) {
+  const html2canvasFn = window.html2canvas;
+  const jsPdfApi = window.jspdf;
+  const jsPdfCtor = jsPdfApi && jsPdfApi.jsPDF;
+
+  if (!html2canvasFn || !jsPdfCtor || !elements.passCard) {
+    return null;
+  }
+
+  const exportCanvas = await html2canvasFn(elements.passCard, {
+    scale: 2,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+  });
+
+  const pdf = new jsPdfCtor({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4",
+  });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 12;
+  const maxWidth = pageWidth - (margin * 2);
+  const maxHeight = pageHeight - (margin * 2);
+  const imageRatio = exportCanvas.height / exportCanvas.width;
+
+  let imageWidth = maxWidth;
+  let imageHeight = imageWidth * imageRatio;
+  if (imageHeight > maxHeight) {
+    imageHeight = maxHeight;
+    imageWidth = imageHeight / imageRatio;
+  }
+
+  const x = (pageWidth - imageWidth) / 2;
+  const y = (pageHeight - imageHeight) / 2;
+  const imageData = exportCanvas.toDataURL("image/png");
+  pdf.addImage(imageData, "PNG", x, y, imageWidth, imageHeight, undefined, "FAST");
+
+  const pdfBlob = pdf.output("blob");
+  const safeCode = safeTrim(participant.code || "passe").replace(/[^A-Za-z0-9_-]+/g, "-");
+  return new File([pdfBlob], `passe-${safeCode}.pdf`, { type: "application/pdf" });
 }
 
 async function openPassFromQuery() {
@@ -1160,10 +1472,12 @@ function renderConfirmedPasses() {
   confirmed.forEach((p) => {
     const card = document.createElement("div");
     card.className = "confirmed-pass-card";
+    card.dataset.code = p.code;
     card.innerHTML = `
       <strong>${escapeHtml(p.fullName)}</strong>
       <span>${escapeHtml(p.activityName)}</span>
       <span>${p.guests} pessoa(s)</span>
+      <button type="button" class="secondary-action compact-action" data-open-pass-code="${escapeHtml(p.code)}">Abrir QR</button>
     `;
     elements.confirmedPassesList.appendChild(card);
   });
@@ -1198,6 +1512,8 @@ function renderAll() {
   renderMetrics();
   renderParticipants();
   renderAudit();
+  renderOrganizers();
+  renderOrganizerInvite();
   renderCheckinActivityFilter();
   renderCheckinDashboard();
 
@@ -1231,8 +1547,107 @@ function renderAudit() {
     const action = safeTrim(item.action || "-");
     const target = safeTrim(item.targetCode || "-");
     const role = safeTrim(item.actorRole || "-");
-    div.textContent = `${when} · ${action} · código ${target} · perfil ${role}`;
+    const actionFilter = safeTrim(elements.auditActionFilter?.value || "").toLowerCase();
+    const userFilter = safeTrim(elements.auditUserFilter?.value || "").toLowerCase();
+    const fromDate = safeTrim(elements.auditDateFrom?.value || "");
+    const toDate = safeTrim(elements.auditDateTo?.value || "");
+    const timestampMs = Date.parse(item.timestamp || "");
+
+    if (actionFilter && !String(item.action || "").toLowerCase().includes(actionFilter)) {
+      return;
+    }
+
+    const rawUsername = safeTrim(item.actorUsername || "");
+    if (userFilter && !rawUsername.toLowerCase().includes(userFilter)) {
+      return;
+    }
+
+    if (Number.isFinite(timestampMs)) {
+      if (fromDate) {
+        const fromMs = Date.parse(`${fromDate}T00:00:00`);
+        if (Number.isFinite(fromMs) && timestampMs < fromMs) {
+          return;
+        }
+      }
+
+      if (toDate) {
+        const toMs = Date.parse(`${toDate}T23:59:59`);
+        if (Number.isFinite(toMs) && timestampMs > toMs) {
+          return;
+        }
+      }
+    }
+
+    const username = rawUsername;
+    const actor = username ? `${role}/${username}` : role;
+    div.textContent = `${when} · ${action} · código ${target} · perfil ${actor}`;
     elements.auditList.appendChild(div);
+  });
+
+  if (elements.auditList.children.length === 0) {
+    elements.auditList.innerHTML = '<p class="empty-state">Sem ações para os filtros selecionados.</p>';
+  }
+}
+
+function renderOrganizers() {
+  if (!elements.organizersSection || !elements.organizersList) {
+    return;
+  }
+
+  const canSettings = hasPermission("manageSettings") && !isFileMode();
+  elements.organizersSection.hidden = !canSettings;
+  if (!canSettings) {
+    return;
+  }
+
+  if (!state.isOwner) {
+    if (elements.organizerForm) elements.organizerForm.hidden = true;
+    state.organizerInvite = null;
+    renderOrganizerInvite();
+    if (elements.organizerStatus) {
+      elements.organizerStatus.textContent = "Gestão de organizadores disponível apenas para a conta dona principal.";
+    }
+    elements.organizersList.innerHTML = '<p class="empty-state">Esta conta não pode criar, desativar ou excluir organizadores.</p>';
+    return;
+  }
+
+  if (elements.organizerForm) elements.organizerForm.hidden = false;
+  if (elements.organizerStatus && elements.organizerStatus.textContent.includes("conta dona principal")) {
+    elements.organizerStatus.textContent = "";
+  }
+
+  const list = Array.isArray(state.organizers) ? state.organizers : [];
+  elements.organizersList.innerHTML = "";
+  if (list.length === 0) {
+    elements.organizersList.innerHTML = '<p class="empty-state">Sem organizadores criados ainda.</p>';
+    return;
+  }
+
+  list.forEach((org) => {
+    const activities = org.allowedActivities.length > 0
+      ? org.allowedActivities.join(", ")
+      : "Todas as atividades";
+    const item = document.createElement("article");
+    item.className = "organizer-item";
+    item.dataset.username = org.username;
+    item.innerHTML = `
+      <div class="organizer-item-head">
+        <strong>${escapeHtml(org.name || org.username)}</strong>
+        <span class="status-chip ${org.active ? "is-valid" : "chip-danger"}">${org.active ? "Ativo" : "Inativo"}</span>
+      </div>
+      <div class="organizer-meta">@${escapeHtml(org.username)} · perfil ${escapeHtml(org.role)} · escopo: ${escapeHtml(activities)}</div>
+      ${org.email ? `<div class="organizer-meta">Email: ${escapeHtml(org.email)}</div>` : ''}
+      ${org.phone ? `<div class="organizer-meta">Telefone: ${escapeHtml(org.phone)}</div>` : ''}
+      ${org.mustChangePassword ? '<div class="organizer-meta">Senha pendente de troca obrigatória</div>' : ''}
+      <div class="organizer-actions">
+        <button type="button" class="secondary-action compact-action" data-org-invite-whatsapp="${escapeHtml(org.username)}">Convite WhatsApp</button>
+        <button type="button" class="secondary-action compact-action" data-org-invite-email="${escapeHtml(org.username)}">Convite Email</button>
+        <button type="button" class="secondary-action compact-action" data-org-toggle="${escapeHtml(org.username)}">${org.active ? "Desativar" : "Ativar"}</button>
+        <button type="button" class="secondary-action compact-action" data-org-reset="${escapeHtml(org.username)}">Redefinir senha</button>
+        <button type="button" class="danger-action compact-action" data-org-delete="${escapeHtml(org.username)}">Excluir</button>
+      </div>
+    `;
+    elements.organizersList.appendChild(item);
   });
 }
 
@@ -1569,6 +1984,7 @@ elements.adminCancelButton.addEventListener("click", closeAdminDialog);
 
 elements.adminLoginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const username = safeTrim(elements.adminUser?.value || "");
   const pin = safeTrim(elements.adminPin.value);
 
   if (!pin) {
@@ -1577,15 +1993,28 @@ elements.adminLoginForm.addEventListener("submit", async (event) => {
   }
 
   elements.adminLoginStatus.textContent = "A verificar senha...";
-  const ok = await loginAdmin(pin);
+  const ok = await loginAdmin(pin, username);
 
   if (!ok) {
     elements.adminLoginStatus.textContent = "Senha incorreta.";
     return;
   }
 
+  if (state.requiresPinChange && !isFileMode()) {
+    try {
+      await runRequiredPinChange(pin);
+      elements.adminLoginStatus.textContent = "Senha atualizada com sucesso.";
+    } catch (error) {
+      elements.adminLoginStatus.textContent = error.message || "Não foi possível concluir a troca de senha obrigatória.";
+      await logoutAdmin();
+      setAdminState(false, { clearData: true });
+      return;
+    }
+  }
+
   closeAdminDialog();
   await loadServerParticipants();
+  await loadOrganizers();
   await loadEventConfig();
   await syncCheckinQueue();
   renderAll();
@@ -1718,6 +2147,29 @@ elements.checkinMatchList.addEventListener("click", (event) => {
   }
 });
 
+if (elements.confirmedPassesList) {
+  elements.confirmedPassesList.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-open-pass-code], .confirmed-pass-card");
+    if (!trigger) {
+      return;
+    }
+
+    const code = trigger.dataset.openPassCode || trigger.dataset.code;
+    if (!code) {
+      return;
+    }
+
+    const participant = state.participants.find((item) => item.code === code);
+    if (!participant) {
+      return;
+    }
+
+    renderPass(participant);
+    showView("pass");
+    elements.formStatus.textContent = `QR pronto para ${participant.fullName}.`;
+  });
+}
+
 elements.participantsBody.addEventListener("click", async (event) => {
   const deleteBtn = event.target.closest("button[data-delete-code]");
   if (deleteBtn) {
@@ -1769,6 +2221,186 @@ elements.participantsBody.addEventListener("click", async (event) => {
     button.disabled = false;
   }
 });
+
+if (elements.organizerForm) {
+  elements.organizerForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (isFileMode()) {
+      elements.organizerStatus.textContent = "Gestão de organizadores disponível apenas quando a API PHP estiver ativa.";
+      return;
+    }
+    if (!hasPermission("manageSettings")) {
+      openAdminDialog();
+      return;
+    }
+
+    const payload = {
+      name: safeTrim(elements.organizerName?.value || ""),
+      username: safeTrim(elements.organizerUsername?.value || ""),
+      email: safeTrim(elements.organizerEmail?.value || ""),
+      phone: safeTrim(elements.organizerPhone?.value || ""),
+      role: safeTrim(elements.organizerRole?.value || "viewer"),
+      pin: safeTrim(elements.organizerPin?.value || ""),
+      allowedActivities: parseCommaList(elements.organizerActivities?.value || ""),
+    };
+
+    if (payload.username.length < 3) {
+      elements.organizerStatus.textContent = "Utilizador deve ter pelo menos 3 caracteres.";
+      return;
+    }
+
+    if (!isStrongPin(payload.pin)) {
+      elements.organizerStatus.textContent = "Senha fraca. Use pelo menos 6 caracteres com letras e números.";
+      return;
+    }
+
+    try {
+      await organizerAction("create", payload);
+      state.organizerInvite = {
+        name: payload.name || payload.username,
+        username: payload.username,
+        email: payload.email,
+        phone: payload.phone,
+        pin: payload.pin,
+        link: organizerAccessUrl(payload.username),
+      };
+      renderOrganizerInvite();
+      elements.organizerForm.reset();
+      if (elements.organizerRole) elements.organizerRole.value = "viewer";
+      elements.organizerStatus.textContent = `Organizador ${payload.username} criado com sucesso.`;
+      await loadOrganizers();
+      await loadServerParticipants();
+    } catch (error) {
+      elements.organizerStatus.textContent = error.message || "Falha ao criar organizador.";
+    }
+  });
+}
+
+if (elements.organizersList) {
+  elements.organizersList.addEventListener("click", async (event) => {
+    if (isFileMode()) {
+      elements.organizerStatus.textContent = "Gestão de organizadores disponível apenas quando a API PHP estiver ativa.";
+      return;
+    }
+
+    const inviteWaButton = event.target.closest("[data-org-invite-whatsapp]");
+    if (inviteWaButton) {
+      const username = safeTrim(inviteWaButton.dataset.orgInviteWhatsapp);
+      const org = state.organizers.find((item) => item.username === username);
+      if (!org) return;
+      const payload = {
+        name: org.name || org.username,
+        username: org.username,
+        phone: org.phone || "",
+        link: organizerAccessUrl(org.username),
+      };
+      openInviteWhatsapp(payload);
+      return;
+    }
+
+    const inviteEmailButton = event.target.closest("[data-org-invite-email]");
+    if (inviteEmailButton) {
+      const username = safeTrim(inviteEmailButton.dataset.orgInviteEmail);
+      const org = state.organizers.find((item) => item.username === username);
+      if (!org) return;
+      const payload = {
+        name: org.name || org.username,
+        username: org.username,
+        email: org.email || "",
+        phone: org.phone || "",
+        link: organizerAccessUrl(org.username),
+      };
+      openInviteEmail(payload);
+      return;
+    }
+
+    const toggleButton = event.target.closest("[data-org-toggle]");
+    if (toggleButton) {
+      const username = safeTrim(toggleButton.dataset.orgToggle);
+      const org = state.organizers.find((item) => item.username === username);
+      if (!org) return;
+      try {
+        await organizerAction("update", { username, active: !org.active });
+        elements.organizerStatus.textContent = `Acesso de ${username} atualizado.`;
+        await loadOrganizers();
+      } catch (error) {
+        elements.organizerStatus.textContent = error.message || "Falha ao atualizar organizador.";
+      }
+      return;
+    }
+
+    const resetButton = event.target.closest("[data-org-reset]");
+    if (resetButton) {
+      const username = safeTrim(resetButton.dataset.orgReset);
+      const newPin = safeTrim(window.prompt(`Nova senha para ${username}:`) || "");
+      if (!newPin) return;
+      if (!isStrongPin(newPin)) {
+        elements.organizerStatus.textContent = "Senha fraca. Use pelo menos 6 caracteres com letras e números.";
+        return;
+      }
+      try {
+        await organizerAction("resetPin", { username, pin: newPin });
+        elements.organizerStatus.textContent = `Senha de ${username} redefinida com sucesso.`;
+      } catch (error) {
+        elements.organizerStatus.textContent = error.message || "Falha ao redefinir senha.";
+      }
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-org-delete]");
+    if (deleteButton) {
+      const username = safeTrim(deleteButton.dataset.orgDelete);
+      const confirmed = window.confirm(`Deseja excluir o organizador ${username}?`);
+      if (!confirmed) return;
+      try {
+        await organizerAction("delete", { username });
+        elements.organizerStatus.textContent = `Organizador ${username} excluído.`;
+        await loadOrganizers();
+      } catch (error) {
+        elements.organizerStatus.textContent = error.message || "Falha ao excluir organizador.";
+      }
+    }
+  });
+}
+
+[elements.auditActionFilter, elements.auditUserFilter, elements.auditDateFrom, elements.auditDateTo]
+  .filter(Boolean)
+  .forEach((field) => field.addEventListener("input", renderAudit));
+
+if (elements.clearAuditFilters) {
+  elements.clearAuditFilters.addEventListener("click", () => {
+    if (elements.auditActionFilter) elements.auditActionFilter.value = "";
+    if (elements.auditUserFilter) elements.auditUserFilter.value = "";
+    if (elements.auditDateFrom) elements.auditDateFrom.value = "";
+    if (elements.auditDateTo) elements.auditDateTo.value = "";
+    renderAudit();
+  });
+}
+
+if (elements.copyInviteMessage) {
+  elements.copyInviteMessage.addEventListener("click", async () => {
+    if (!state.organizerInvite) return;
+    await navigator.clipboard.writeText(organizerInviteMessageText(state.organizerInvite));
+    elements.copyInviteMessage.textContent = "Copiado";
+    setTimeout(() => {
+      elements.copyInviteMessage.textContent = "Copiar mensagem";
+    }, 1600);
+  });
+}
+
+if (elements.sendInviteWhatsapp) {
+  elements.sendInviteWhatsapp.addEventListener("click", () => {
+    if (!state.organizerInvite) return;
+    openInviteWhatsapp(state.organizerInvite);
+  });
+}
+
+if (elements.sendInviteEmail) {
+  elements.sendInviteEmail.addEventListener("click", () => {
+    if (!state.organizerInvite) return;
+    openInviteEmail(state.organizerInvite);
+  });
+}
 
 async function confirmCurrentCheckinEntry(source = "manual") {
   if (!state.currentCheckin) {
@@ -1879,29 +2511,56 @@ elements.sharePass.addEventListener("click", async () => {
     return;
   }
 
-  const text = participantText(state.currentPass);
-  const canvas = elements.passSeal.querySelector("canvas");
+  const participant = state.currentPass;
+  const originalLabel = elements.sharePass.textContent;
+  elements.sharePass.disabled = true;
+  elements.sharePass.textContent = "A preparar PDF...";
 
-  if (navigator.share && canvas) {
-    canvas.toBlob(async (blob) => {
-      if (blob) {
-        const file = new File([blob], "passe-qr.png", { type: "image/png" });
-        const shareData = { title: "Passe de Atividade", text, files: [file] };
-        if (navigator.canShare && navigator.canShare(shareData)) {
-          try { await navigator.share(shareData); return; } catch {}
-        }
+  let pdfFile = null;
+  try {
+    pdfFile = await generatePassPdfFile(participant);
+  } catch {
+    pdfFile = null;
+  }
+
+  const text = participantText(participant);
+
+  if (navigator.share && pdfFile) {
+    const shareData = { title: "Passe de Atividade", text, files: [pdfFile] };
+    if (!navigator.canShare || navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        elements.sharePass.disabled = false;
+        elements.sharePass.textContent = originalLabel;
+        return;
+      } catch {
+        // Fallback abaixo.
       }
-      try { await navigator.share({ title: "Passe de Atividade", text }); return; } catch {}
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
-    });
-    return;
+    }
   }
 
   if (navigator.share) {
-    try { await navigator.share({ title: "Passe de Atividade", text }); return; } catch {}
+    try {
+      await navigator.share({ title: "Passe de Atividade", text });
+      elements.sharePass.disabled = false;
+      elements.sharePass.textContent = originalLabel;
+      return;
+    } catch {
+      // Fallback para WhatsApp.
+    }
   }
 
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  if (pdfFile) {
+    downloadFile(pdfFile);
+  }
+
+  const whatsappText = pdfFile
+    ? `${text}\n\nPDF do passe gerado para anexar no WhatsApp.`
+    : text;
+  window.open(`https://wa.me/?text=${encodeURIComponent(whatsappText)}`, "_blank", "noopener");
+
+  elements.sharePass.disabled = false;
+  elements.sharePass.textContent = originalLabel;
 });
 
 elements.printPass.addEventListener("click", () => {
@@ -2096,6 +2755,7 @@ elements.clearLocal.addEventListener("click", () => {
 
 async function initializeApp() {
   loadPricing();
+  applyOrganizerPrefillFromQuery();
   renderEventConfigInputs();
   loadLocalParticipants();
   renderAll();
@@ -2106,6 +2766,7 @@ async function initializeApp() {
 
   if (state.isAdmin) {
     await loadServerParticipants();
+    await loadOrganizers();
     await syncCheckinQueue();
     renderAll();
   }

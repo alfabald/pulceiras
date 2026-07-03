@@ -1,0 +1,82 @@
+{"timestamp":"2026-06-25T22:43:24+02:00","action":"login_failed","targetCode":"","actorRole":"none","ip":"::1","meta":{"reason":"invalid_pin"}}
+{"timestamp":"2026-06-25T22:43:24+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:43:24+02:00","action":"register","targetCode":"GABU-2026-TST6034","actorRole":"none","ip":"::1","meta":{"activity":"Teste QA","guests":1}}
+{"timestamp":"2026-06-25T22:43:25+02:00","action":"confirm_payment","targetCode":"GABU-2026-TST6034","actorRole":"admin","ip":"::1","meta":{"amount":12,"hasProofImage":false,"proofNote":"comprovante teste"}}
+{"timestamp":"2026-06-25T22:43:25+02:00","action":"checkin_confirm","targetCode":"GABU-2026-TST6034","actorRole":"admin","ip":"::1","meta":{"checkedInAt":"2026-06-25T22:43:25+02:00"}}
+{"timestamp":"2026-06-25T22:43:25+02:00","action":"delete_participant","targetCode":"GABU-2026-TST6034","actorRole":"admin","ip":"::1","meta":[]}
+{"timestamp":"2026-06-25T22:43:25+02:00","action":"logout","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:43:36+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:43:47+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:43:47+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","ip":"::1","meta":{"eventName":"Teste Evento","eventDate":""}}
+{"timestamp":"2026-06-25T22:43:54+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:45:09+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-25T22:47:31+02:00","action":"logout","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-06-26T21:53:49+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:08:08+02:00","action":"logout","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:08:57+02:00","action":"login_success","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:09:27+02:00","action":"delete_participant","targetCode":"GABU-2026-1CSZFB","actorRole":"admin","ip":"::1","meta":[]}
+{"timestamp":"2026-07-01T21:09:47+02:00","action":"delete_participant","targetCode":"GABU-2026-1SP2A3","actorRole":"admin","ip":"::1","meta":[]}
+{"timestamp":"2026-07-01T21:09:53+02:00","action":"delete_participant","targetCode":"GABU-2026-1BI602","actorRole":"admin","ip":"::1","meta":[]}
+{"timestamp":"2026-07-01T21:10:38+02:00","action":"logout","targetCode":"","actorRole":"admin","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"bootstrap_owner","targetCode":"","actorRole":"none","actorUsername":"","ip":"::1","meta":{"username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.turno1","role":"entry"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"financeiro.turno1","role":"finance"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"auditoria.leitura","role":"viewer"}}
+{"timestamp":"2026-07-01T21:28:57+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"admin.backup","role":"admin"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.turno1"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.turno1"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"financeiro.turno1"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"financeiro.turno1"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"auditoria.leitura"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"auditoria.leitura"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:33:01+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:35:35+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"role":"admin","username":""}}
+{"timestamp":"2026-07-01T21:37:54+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:37:54+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:37:55+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:37:57+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.turno1"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.turno1"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"financeiro.turno1"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"financeiro.turno1"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"auditoria.leitura"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"auditoria.leitura"}}
+{"timestamp":"2026-07-01T21:43:00+02:00","action":"organizer_update","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:43:01+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"admin.backup"}}
+{"timestamp":"2026-07-01T21:45:35+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:45:54+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"role":"admin","username":""}}
+{"timestamp":"2026-07-01T21:51:20+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:53:37+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:53:58+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T21:55:03+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T21:55:46+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:13:19+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T22:13:54+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:20:03+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.aua","role":"admin"}}
+{"timestamp":"2026-07-01T22:24:50+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:24:50+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"convite.teste","role":"viewer"}}
+{"timestamp":"2026-07-01T22:27:12+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:27:12+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"email.teste","role":"viewer"}}
+{"timestamp":"2026-07-01T22:29:17+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:29:17+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"whatsapp.teste","role":"viewer"}}
+{"timestamp":"2026-07-01T22:38:17+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T22:38:28+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:43:03+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:43:09+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:43:10+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:43:12+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:44:20+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:44:26+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:46:03+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:46:19+02:00","action":"logout","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin"}}
+{"timestamp":"2026-07-01T22:46:47+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:46:57+02:00","action":"event_config_updated","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"eventName":"Gabu Hamburg 2026","eventDate":"2026-07-18"}}
+{"timestamp":"2026-07-01T22:48:32+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:48:32+02:00","action":"organizer_create","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.ana","role":"entry"}}
+{"timestamp":"2026-07-01T22:48:39+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-01T22:48:45+02:00","action":"login_success","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"role":"admin","username":"dono.gabu"}}
+{"timestamp":"2026-07-03T13:32:38+02:00","action":"organizer_reset_pin","targetCode":"","actorRole":"admin","actorUsername":"dono.gabu","ip":"::1","meta":{"username":"entrada.ana"}}
