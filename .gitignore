@@ -1,6 +1,7 @@
 # Dados locais
 /data/participants.json
 /data/backups/
+/backups/
 
 # Ambiente
 .env
